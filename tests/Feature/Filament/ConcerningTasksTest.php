@@ -43,43 +43,42 @@ test('starring a task from the full list marks it important', function () {
     expect($issue->fresh()->is_important)->toBeFalse();
 });
 
-test('snoozing a task sets the snooze window on the concerning list', function () {
+test('snoozing a task sets the snooze window at midnight on the concerning list', function () {
     $issue = JiraIssue::factory()->for($this->user)->important()->create();
 
     livewire(ListConcerningTasks::class)
-        ->callTableAction('snooze', $issue, data: ['duration' => '3h']);
+        ->callTableAction('snooze', $issue, data: ['duration' => 'tomorrow']);
 
     expect($issue->fresh()->snoozed_until)->not->toBeNull()
-        ->and($issue->fresh()->snoozed_until->between(now()->addHours(3)->subMinute(), now()->addHours(3)->addMinute()))->toBeTrue();
+        ->and($issue->fresh()->snoozed_until->equalTo(now()->addDay()->startOfDay()))->toBeTrue();
 });
 
-test('each snooze duration maps to the expected window', function (string $duration, Closure $expected) {
+test('each snooze duration maps to midnight of the expected day', function (string $duration, Closure $expected) {
     $issue = JiraIssue::factory()->for($this->user)->important()->create();
 
     livewire(ListConcerningTasks::class)
         ->callTableAction('snooze', $issue, data: ['duration' => $duration]);
 
-    $target = $expected();
-
-    expect($issue->fresh()->snoozed_until->between($target->copy()->subMinute(), $target->copy()->addMinute()))->toBeTrue();
+    expect($issue->fresh()->snoozed_until->equalTo($expected()))->toBeTrue();
 })->with([
-    ['3h', fn () => now()->addHours(3)],
-    ['1d', fn () => now()->addDay()],
-    ['3d', fn () => now()->addDays(3)],
-    ['1w', fn () => now()->addWeek()],
+    ['tomorrow', fn () => now()->addDay()->startOfDay()],
+    ['2_days', fn () => now()->addDays(2)->startOfDay()],
+    ['next_week', fn () => now()->addWeek()->startOfDay()],
 ]);
 
-test('dismissing a task stamps the dismissed_at column', function () {
+test('dismissing a task stamps dismissed_at and unstars it', function () {
     $issue = JiraIssue::factory()->for($this->user)->create([
         'assignee_account_id' => 'acc-me',
         'jira_updated_at' => now(),
         'dismissed_at' => null,
+        'is_important' => true,
     ]);
 
     livewire(ListConcerningTasks::class)
         ->callTableAction('dismiss', $issue);
 
-    expect($issue->fresh()->dismissed_at)->not->toBeNull();
+    expect($issue->fresh()->dismissed_at)->not->toBeNull()
+        ->and($issue->fresh()->is_important)->toBeFalse();
 });
 
 test('un-snoozing a task from the full list clears the snooze window', function () {
@@ -125,25 +124,27 @@ test('bulk snoozing sets the window on every selected task', function () {
     $issues = JiraIssue::factory()->for($this->user)->important()->count(3)->create();
 
     livewire(ListConcerningTasks::class)
-        ->callTableBulkAction('bulkSnooze', $issues, data: ['duration' => '1w']);
+        ->callTableBulkAction('bulkSnooze', $issues, data: ['duration' => 'next_week']);
 
     $issues->each(function (JiraIssue $issue): void {
         expect($issue->fresh()->snoozed_until)->not->toBeNull()
-            ->and($issue->fresh()->snoozed_until->between(now()->addWeek()->subMinute(), now()->addWeek()->addMinute()))->toBeTrue();
+            ->and($issue->fresh()->snoozed_until->equalTo(now()->addWeek()->startOfDay()))->toBeTrue();
     });
 });
 
-test('bulk dismissing stamps every selected task', function () {
+test('bulk dismissing stamps and unstars every selected task', function () {
     $issue = JiraIssue::factory()->for($this->user)->create([
         'assignee_account_id' => 'acc-me',
         'jira_updated_at' => now(),
         'dismissed_at' => null,
+        'is_important' => true,
     ]);
 
     livewire(ListConcerningTasks::class)
         ->callTableBulkAction('bulkDismiss', collect([$issue]));
 
-    expect($issue->fresh()->dismissed_at)->not->toBeNull();
+    expect($issue->fresh()->dismissed_at)->not->toBeNull()
+        ->and($issue->fresh()->is_important)->toBeFalse();
 });
 
 test('the bulk actions are hidden on the full task list', function () {
@@ -172,4 +173,15 @@ test('the concerning badge is null when nothing needs attention', function () {
     $items = JiraIssueResource::getNavigationItems();
 
     expect($items[0]->getBadge())->toBeNull();
+});
+
+test('the concerning page shows the last sync time when connected', function () {
+    $user = User::factory()->withJiraConnection()->create([
+        'jira_account_id' => 'acc-me',
+        'jira_last_synced_at' => now()->subMinutes(3),
+    ]);
+    $this->actingAs($user);
+
+    livewire(ListConcerningTasks::class)
+        ->assertSee('Last synced');
 });

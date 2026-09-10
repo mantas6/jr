@@ -15,9 +15,9 @@ use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Columns\SelectColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
@@ -51,8 +51,13 @@ class JiraIssuesTable
                     ->label('Type')
                     ->badge()
                     ->color(fn (JiraIssue $record): string => self::issueTypeColor($record->issue_type)),
-                self::statusColumn(),
-                self::assigneeColumn(),
+                TextColumn::make('status')
+                    ->label('Status')
+                    ->badge()
+                    ->color(fn (JiraIssue $record): string => self::statusColor($record->status_category)),
+                TextColumn::make('assignee_name')
+                    ->label('Assignee')
+                    ->placeholder('Unassigned'),
                 TextColumn::make('priority')
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('sprints')
@@ -99,6 +104,7 @@ class JiraIssuesTable
             ->recordUrl(fn (JiraIssue $record): string => JiraIssueResource::getUrl('view', ['record' => $record]))
             ->defaultSort('jira_updated_at', 'desc')
             ->recordActions([
+                self::updateStatusAssigneeAction(),
                 self::starAction(),
                 self::snoozeAction(),
                 self::unsnoozeAction(),
@@ -127,9 +133,6 @@ class JiraIssuesTable
             ->poll('30s');
     }
 
-    /**
-     * Inline status dropdown driven by the cached Jira transitions.
-     */
     /**
      * Escape the summary and wrap any bracketed segments (e.g. `[API]`) in bold,
      * keeping the brackets themselves.
@@ -166,125 +169,192 @@ class JiraIssuesTable
         return 'gray';
     }
 
-    private static function statusColumn(): SelectColumn
+    /**
+     * Modal action to change the status and/or assignee in one step, with an
+     * optional dismiss toggle that clears the task once the update lands.
+     */
+    private static function updateStatusAssigneeAction(): Action
     {
-        return SelectColumn::make('status_id')
-            ->label('Status')
-            ->disabled(fn (): bool => ! self::user()->hasJiraConnection())
-            ->options(function (JiraIssue $record): array {
-                $options = [$record->status_id => $record->status];
-
-                $user = self::user();
-
-                if (! $user->hasJiraConnection()) {
-                    return $options;
-                }
-
-                try {
-                    $transitions = JiraTransitionsCache::remember(
-                        $user,
-                        JiraClient::forUser($user),
-                        $record->jira_key,
-                        $record->issue_type,
-                        $record->status_id,
-                    );
-                } catch (JiraApiException) {
-                    return $options;
-                }
-
-                foreach ($transitions as $transition) {
-                    $options[$transition['to_id']] = $transition['to_name'];
-                }
-
-                return $options;
-            })
-            ->updateStateUsing(function (JiraIssue $record, mixed $state): mixed {
-                if ($state === $record->status_id) {
-                    return $state;
-                }
+        return Action::make('updateStatusAssignee')
+            ->label('Update status / assignee')
+            ->icon(Heroicon::PencilSquare)
+            ->color('gray')
+            ->iconButton()
+            ->visible(fn (): bool => self::user()->hasJiraConnection())
+            ->schema([
+                Select::make('status_id')
+                    ->label('Status')
+                    ->options(fn (JiraIssue $record): array => self::statusOptions($record))
+                    ->default(fn (JiraIssue $record): string => $record->status_id)
+                    ->selectablePlaceholder(false)
+                    ->required(),
+                Select::make('assignee_account_id')
+                    ->label('Assignee')
+                    ->placeholder('Unassigned')
+                    ->default(fn (JiraIssue $record): ?string => $record->assignee_account_id)
+                    ->options(fn (JiraIssue $record): array => self::assigneeOptions($record))
+                    ->searchable()
+                    ->getSearchResultsUsing(fn (string $search): array => self::searchAssignees($search))
+                    ->getOptionLabelUsing(fn (JiraIssue $record, mixed $value): ?string => self::assigneeOptionLabel($record, $value)),
+                Toggle::make('dismiss')
+                    ->label('Dismiss this task')
+                    ->default(false),
+            ])
+            ->action(function (JiraIssue $record, array $data): void {
+                $actions = JiraIssueActions::forUser(self::user());
+                $originalStatusId = $record->status_id;
+                $originalAssignee = $record->assignee_account_id;
 
                 try {
-                    return JiraIssueActions::forUser(self::user())
-                        ->transition($record, (string) $state)
-                        ->status_id;
+                    if ((string) $data['status_id'] !== $originalStatusId) {
+                        $actions->transition($record, (string) $data['status_id']);
+                    }
+
+                    $accountId = $data['assignee_account_id'] ?? null;
+
+                    if ($accountId !== $originalAssignee) {
+                        $actions->assign($record, filled($accountId) ? (string) $accountId : null);
+                    }
                 } catch (JiraApiException $exception) {
-                    return ['error' => $exception->getMessage()];
+                    Notification::make()->danger()->title('Update failed')->body($exception->getMessage())->send();
+
+                    return;
                 }
+
+                if ($data['dismiss'] ?? false) {
+                    self::dismissRecord($record);
+                }
+
+                Notification::make()->success()->title('Task updated')->send();
             });
     }
 
     /**
-     * Inline assignee dropdown. Render-time options are local only; searching
-     * hits Jira's assignable-users endpoint (cached per user/project/query).
+     * The current status plus any reachable transition targets from cache.
+     *
+     * @return array<string, string>
      */
-    private static function assigneeColumn(): SelectColumn
+    private static function statusOptions(JiraIssue $record): array
     {
-        return SelectColumn::make('assignee_account_id')
-            ->label('Assignee')
-            ->selectablePlaceholder()
-            ->placeholder('Unassigned')
-            ->disabled(fn (): bool => ! self::user()->hasJiraConnection())
-            ->options(function (JiraIssue $record): array {
-                $user = self::user();
-                $options = [];
+        $options = [$record->status_id => $record->status];
 
-                if (filled($user->jira_account_id)) {
-                    $options[$user->jira_account_id] = 'Me ('.$user->name.')';
-                }
+        $user = self::user();
 
-                if (filled($record->assignee_account_id)) {
-                    $options[$record->assignee_account_id] = $record->assignee_name ?? $record->assignee_account_id;
-                }
+        if (! $user->hasJiraConnection()) {
+            return $options;
+        }
 
-                return $options;
-            })
-            ->searchableOptions()
-            ->getOptionsSearchResultsUsing(function (string $search): array {
-                $user = self::user();
+        try {
+            $transitions = JiraTransitionsCache::remember(
+                $user,
+                JiraClient::forUser($user),
+                $record->jira_key,
+                $record->issue_type,
+                $record->status_id,
+            );
+        } catch (JiraApiException) {
+            return $options;
+        }
 
-                if (! $user->hasJiraConnection() || blank($search)) {
-                    return [];
-                }
+        foreach ($transitions as $transition) {
+            $options[$transition['to_id']] = $transition['to_name'];
+        }
 
-                $project = (string) $user->jira_project_key;
-                $key = "jira:assignable:{$user->id}:{$project}:".md5($search);
+        return $options;
+    }
 
-                $results = Cache::remember(
-                    $key,
-                    300,
-                    fn (): array => JiraClient::forUser($user)->searchAssignableUsers($project, $search),
-                );
+    /**
+     * Render-time assignee options: the current user and current assignee.
+     *
+     * @return array<string, string>
+     */
+    private static function assigneeOptions(JiraIssue $record): array
+    {
+        $user = self::user();
+        $options = [];
 
-                return collect($results)
-                    ->pluck('displayName', 'accountId')
-                    ->all();
-            })
-            ->getOptionLabelUsing(function (JiraIssue $record, mixed $value): ?string {
-                if (blank($value)) {
-                    return null;
-                }
+        if (filled($user->jira_account_id)) {
+            $options[$user->jira_account_id] = 'Me ('.$user->name.')';
+        }
 
-                $user = self::user();
+        if (filled($record->assignee_account_id)) {
+            $options[$record->assignee_account_id] = $record->assignee_name ?? $record->assignee_account_id;
+        }
 
-                if ($value === $user->jira_account_id) {
-                    return 'Me ('.$user->name.')';
-                }
+        return $options;
+    }
 
-                if ($value === $record->assignee_account_id) {
-                    return $record->assignee_name;
-                }
+    /**
+     * Search Jira's assignable users for the current project (cached per query).
+     *
+     * @return array<string, string>
+     */
+    private static function searchAssignees(string $search): array
+    {
+        $user = self::user();
 
-                return $record->assignee_name ?? (string) $value;
-            })
-            ->updateStateUsing(function (JiraIssue $record, mixed $state): mixed {
-                try {
-                    return JiraIssueActions::forUser(self::user())
-                        ->assign($record, filled($state) ? (string) $state : null)
-                        ->assignee_account_id;
-                } catch (JiraApiException $exception) {
-                    return ['error' => $exception->getMessage()];
-                }
-            });
+        if (! $user->hasJiraConnection() || blank($search)) {
+            return [];
+        }
+
+        $project = (string) $user->jira_project_key;
+        $key = "jira:assignable:{$user->id}:{$project}:".md5($search);
+
+        $results = Cache::remember(
+            $key,
+            300,
+            fn (): array => JiraClient::forUser($user)->searchAssignableUsers($project, $search),
+        );
+
+        return collect($results)
+            ->pluck('displayName', 'accountId')
+            ->all();
+    }
+
+    /**
+     * Resolve the display label for a selected assignee value.
+     */
+    private static function assigneeOptionLabel(JiraIssue $record, mixed $value): ?string
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        $user = self::user();
+
+        if ($value === $user->jira_account_id) {
+            return 'Me ('.$user->name.')';
+        }
+
+        if ($value === $record->assignee_account_id) {
+            return $record->assignee_name ?? (string) $value;
+        }
+
+        return $record->assignee_name ?? (string) $value;
+    }
+
+    /**
+     * Map a Jira status category to a badge color.
+     */
+    private static function statusColor(?string $statusCategory): string
+    {
+        return match ($statusCategory) {
+            'Done' => 'success',
+            'In Progress' => 'info',
+            default => 'gray',
+        };
+    }
+
+    /**
+     * Dismiss a task until Jira reports newer activity. A dismissed task is also
+     * unstarred so it does not linger on the concerning list via the important flag.
+     */
+    private static function dismissRecord(JiraIssue $record): void
+    {
+        $record->update([
+            'dismissed_at' => Carbon::now(),
+            'is_important' => false,
+        ]);
     }
 
     /**
@@ -312,14 +382,9 @@ class JiraIssuesTable
             ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
             ->schema([
                 Select::make('duration')
-                    ->label('Snooze for')
-                    ->options([
-                        '3h' => '3 hours',
-                        '1d' => '1 day',
-                        '3d' => '3 days',
-                        '1w' => '1 week',
-                    ])
-                    ->default('1d')
+                    ->label('Snooze until')
+                    ->options(self::snoozeOptions())
+                    ->default('tomorrow')
                     ->required(),
             ])
             ->action(function (JiraIssue $record, array $data): void {
@@ -354,7 +419,7 @@ class JiraIssuesTable
             ->color('gray')
             ->iconButton()
             ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
-            ->action(fn (JiraIssue $record) => $record->update(['dismissed_at' => Carbon::now()]));
+            ->action(fn (JiraIssue $record) => self::dismissRecord($record));
     }
 
     /**
@@ -384,14 +449,9 @@ class JiraIssuesTable
             ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
             ->schema([
                 Select::make('duration')
-                    ->label('Snooze for')
-                    ->options([
-                        '3h' => '3 hours',
-                        '1d' => '1 day',
-                        '3d' => '3 days',
-                        '1w' => '1 week',
-                    ])
-                    ->default('1d')
+                    ->label('Snooze until')
+                    ->options(self::snoozeOptions())
+                    ->default('tomorrow')
                     ->required(),
             ])
             ->action(function (Collection $records, array $data): void {
@@ -412,23 +472,34 @@ class JiraIssuesTable
             ->icon(Heroicon::OutlinedCheck)
             ->color('gray')
             ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
-            ->action(fn (Collection $records) => $records->each->update(['dismissed_at' => Carbon::now()]))
+            ->action(fn (Collection $records) => $records->each(fn (JiraIssue $record) => self::dismissRecord($record)))
             ->deselectRecordsAfterCompletion();
     }
 
     /**
-     * Resolve a snooze duration token into an absolute timestamp.
+     * The available snooze windows, keyed by token.
+     *
+     * @return array<string, string>
+     */
+    private static function snoozeOptions(): array
+    {
+        return [
+            'tomorrow' => 'Tomorrow',
+            '2_days' => '2 days',
+            'next_week' => 'Next week',
+        ];
+    }
+
+    /**
+     * Resolve a snooze token into midnight (00:00:00) of the target day.
      */
     private static function snoozeUntil(string $duration): Carbon
     {
-        $now = Carbon::now();
-
         return match ($duration) {
-            '3h' => $now->addHours(3),
-            '1d' => $now->addDay(),
-            '3d' => $now->addDays(3),
-            '1w' => $now->addWeek(),
-            default => $now,
+            'tomorrow' => Carbon::tomorrow(),
+            '2_days' => Carbon::now()->addDays(2)->startOfDay(),
+            'next_week' => Carbon::now()->addWeek()->startOfDay(),
+            default => Carbon::now()->startOfDay(),
         };
     }
 

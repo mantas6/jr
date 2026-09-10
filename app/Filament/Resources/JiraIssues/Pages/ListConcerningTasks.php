@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\JiraIssues\Pages;
 
+use App\Filament\Resources\JiraIssues\Concerns\ShowsSyncStatusSubheading;
 use App\Filament\Resources\JiraIssues\JiraIssueResource;
 use App\Models\JiraIssue;
 use App\Models\User;
@@ -10,6 +11,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ListConcerningTasks extends ListRecords
 {
+    use ShowsSyncStatusSubheading;
+
     protected static string $resource = JiraIssueResource::class;
 
     protected static ?string $title = 'Concerning Tasks';

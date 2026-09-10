@@ -16,6 +16,7 @@ use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
 class ViewJiraIssue extends ViewRecord
@@ -117,14 +118,13 @@ class ViewJiraIssue extends ViewRecord
             ->color('gray')
             ->schema([
                 Select::make('duration')
-                    ->label('Snooze for')
+                    ->label('Snooze until')
                     ->options([
-                        '3h' => '3 hours',
-                        '1d' => '1 day',
-                        '3d' => '3 days',
-                        '1w' => '1 week',
+                        'tomorrow' => 'Tomorrow',
+                        '2_days' => '2 days',
+                        'next_week' => 'Next week',
                     ])
-                    ->default('1d')
+                    ->default('tomorrow')
                     ->required(),
             ])
             ->action(function (array $data): void {
@@ -161,25 +161,22 @@ class ViewJiraIssue extends ViewRecord
             ->icon(Heroicon::OutlinedCheck)
             ->color('gray')
             ->action(function (): void {
-                $this->currentRecord()->update(['dismissed_at' => now()]);
+                $this->currentRecord()->update(['dismissed_at' => now(), 'is_important' => false]);
 
                 Notification::make()->success()->title('Dismissed')->send();
             });
     }
 
     /**
-     * Resolve a snooze duration token into an absolute timestamp.
+     * Resolve a snooze token into midnight (00:00:00) of the target day.
      */
     private function snoozeUntil(string $duration): CarbonInterface
     {
-        $now = now();
-
         return match ($duration) {
-            '3h' => $now->addHours(3),
-            '1d' => $now->addDay(),
-            '3d' => $now->addDays(3),
-            '1w' => $now->addWeek(),
-            default => $now,
+            'tomorrow' => Carbon::tomorrow(),
+            '2_days' => Carbon::now()->addDays(2)->startOfDay(),
+            'next_week' => Carbon::now()->addWeek()->startOfDay(),
+            default => Carbon::now()->startOfDay(),
         };
     }
 
@@ -350,7 +347,7 @@ class ViewJiraIssue extends ViewRecord
         }
 
         if ($value === $record->assignee_account_id) {
-            return $record->assignee_name;
+            return $record->assignee_name ?? (string) $value;
         }
 
         return $record->assignee_name ?? (string) $value;

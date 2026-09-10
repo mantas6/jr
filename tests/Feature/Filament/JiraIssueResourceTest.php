@@ -40,7 +40,7 @@ function resourceIssuePayload(string $key, array $fields = []): array
 
 test('guests are redirected to login', function () {
     $this->get(JiraIssueResource::getUrl())
-        ->assertRedirect('/admin/login');
+        ->assertRedirect('/login');
 });
 
 test('the list page renders for an authenticated user', function () {
@@ -88,7 +88,7 @@ test('the sync action is disabled when jira is not connected', function () {
         ->assertTableActionDisabled('sync');
 });
 
-test('rendering the status column reads options from cache without hitting jira', function () {
+test('opening the update modal reads status options from cache without hitting jira', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
 
@@ -104,17 +104,17 @@ test('rendering the status column reads options from cache without hitting jira'
 
     Http::fake();
 
+    // Submitting with the current status validates the status select's options,
+    // which are read from the transitions cache — so no Jira call is made.
     livewire(ListJiraIssues::class)
         ->assertCanSeeTableRecords([$issue])
-        ->assertTableSelectColumnHasOptions('status_id', [
-            '1' => 'To Do',
-            '2' => 'In Progress',
-        ], $issue);
+        ->callTableAction('updateStatusAssignee', $issue, data: ['status_id' => '1'])
+        ->assertNotified('Task updated');
 
     Http::assertNothingSent();
 });
 
-test('changing the status transitions the issue and refreshes the row', function () {
+test('changing the status via the update modal transitions the issue and refreshes the row', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
 
@@ -135,7 +135,8 @@ test('changing the status transitions the issue and refreshes the row', function
     ]);
 
     livewire(ListJiraIssues::class)
-        ->call('updateTableColumnState', 'status_id', (string) $issue->getKey(), '2');
+        ->callTableAction('updateStatusAssignee', $issue, data: ['status_id' => '2'])
+        ->assertNotified('Task updated');
 
     expect($issue->fresh()->status_id)->toBe('2')
         ->and($issue->fresh()->status)->toBe('In Progress');
@@ -170,13 +171,14 @@ test('a status change trusts the transition target when jira re-fetch is still s
     ]);
 
     livewire(ListJiraIssues::class)
-        ->call('updateTableColumnState', 'status_id', (string) $issue->getKey(), '2');
+        ->callTableAction('updateStatusAssignee', $issue, data: ['status_id' => '2'])
+        ->assertNotified('Task updated');
 
     expect($issue->fresh()->status_id)->toBe('2')
         ->and($issue->fresh()->status)->toBe('In Progress');
 });
 
-test('a rejected status change leaves the row unchanged', function () {
+test('a rejected status change notifies and leaves the row unchanged', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
 
@@ -196,68 +198,13 @@ test('a rejected status change leaves the row unchanged', function () {
     ]);
 
     livewire(ListJiraIssues::class)
-        ->call('updateTableColumnState', 'status_id', (string) $issue->getKey(), '2')
-        ->assertReturned(fn (mixed $result): bool => is_array($result) && isset($result['error']));
+        ->callTableAction('updateStatusAssignee', $issue, data: ['status_id' => '2'])
+        ->assertNotified('Update failed');
 
     expect($issue->fresh()->status_id)->toBe('1');
 });
 
-test('the assignee options list the current user and assignee without hitting jira', function () {
-    $user = User::factory()->withJiraConnection()->create([
-        'jira_account_id' => 'acc-me',
-        'name' => 'Me McGee',
-        'jira_last_synced_at' => now(),
-    ]);
-    $this->actingAs($user);
-
-    $issue = JiraIssue::factory()->for($user)->create([
-        'issue_type' => 'Task',
-        'status_id' => '1',
-        'assignee_account_id' => 'acc-old',
-        'assignee_name' => 'Old Assignee',
-    ]);
-
-    JiraTransitionsCache::put($user, 'Task', '1', []);
-
-    Http::fake();
-
-    livewire(ListJiraIssues::class)
-        ->assertTableSelectColumnHasOptions('assignee_account_id', [
-            'acc-me' => 'Me (Me McGee)',
-            'acc-old' => 'Old Assignee',
-        ], $issue);
-
-    Http::assertNothingSent();
-});
-
-test('searching assignees hits the assignable endpoint with the typed query', function () {
-    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
-
-    $issue = JiraIssue::factory()->for($user)->create([
-        'issue_type' => 'Task',
-        'status_id' => '1',
-    ]);
-
-    JiraTransitionsCache::put($user, 'Task', '1', []);
-
-    Http::fake([
-        '*/rest/api/3/user/assignable/search*' => Http::response([
-            ['accountId' => 'acc-jane', 'displayName' => 'Jane Jira'],
-        ]),
-    ]);
-
-    livewire(ListJiraIssues::class)
-        ->call('callTableColumnMethod', 'assignee_account_id', (string) $issue->getKey(), 'getOptionsSearchResultsForJs', ['search' => 'jane']);
-
-    Http::assertSent(function ($request) {
-        return str_contains($request->url(), '/rest/api/3/user/assignable/search')
-            && $request['query'] === 'jane'
-            && $request['project'] === 'PROJ';
-    });
-});
-
-test('changing the assignee assigns the issue in jira and refreshes the row', function () {
+test('changing the assignee via the update modal assigns the issue in jira and refreshes the row', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
 
@@ -279,7 +226,8 @@ test('changing the assignee assigns the issue in jira and refreshes the row', fu
     ]);
 
     livewire(ListJiraIssues::class)
-        ->call('updateTableColumnState', 'assignee_account_id', (string) $issue->getKey(), 'acc-9');
+        ->callTableAction('updateStatusAssignee', $issue, data: ['status_id' => '1', 'assignee_account_id' => 'acc-9'])
+        ->assertNotified('Task updated');
 
     expect($issue->fresh()->assignee_account_id)->toBe('acc-9')
         ->and($issue->fresh()->assignee_name)->toBe('Assignee Nine');
@@ -291,7 +239,7 @@ test('changing the assignee assigns the issue in jira and refreshes the row', fu
     });
 });
 
-test('selecting Unassigned clears the assignee in jira and locally', function () {
+test('selecting Unassigned via the update modal clears the assignee in jira and locally', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
 
@@ -313,7 +261,8 @@ test('selecting Unassigned clears the assignee in jira and locally', function ()
     ]);
 
     livewire(ListJiraIssues::class)
-        ->call('updateTableColumnState', 'assignee_account_id', (string) $issue->getKey(), null);
+        ->callTableAction('updateStatusAssignee', $issue, data: ['status_id' => '1', 'assignee_account_id' => null])
+        ->assertNotified('Task updated');
 
     expect($issue->fresh()->assignee_account_id)->toBeNull()
         ->and($issue->fresh()->assignee_name)->toBeNull();
@@ -326,7 +275,7 @@ test('selecting Unassigned clears the assignee in jira and locally', function ()
     });
 });
 
-test('a rejected assignee change returns an inline error and leaves the row unchanged', function () {
+test('a rejected assignee change notifies and leaves the row unchanged', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
 
@@ -345,11 +294,35 @@ test('a rejected assignee change returns an inline error and leaves the row unch
     ]);
 
     livewire(ListJiraIssues::class)
-        ->call('updateTableColumnState', 'assignee_account_id', (string) $issue->getKey(), 'acc-new')
-        ->assertReturned(fn (mixed $result): bool => is_array($result) && isset($result['error']));
+        ->callTableAction('updateStatusAssignee', $issue, data: ['status_id' => '1', 'assignee_account_id' => 'acc-new'])
+        ->assertNotified('Update failed');
 
     expect($issue->fresh()->assignee_account_id)->toBe('acc-old')
         ->and($issue->fresh()->assignee_name)->toBe('Old Assignee');
+});
+
+test('the update modal dismiss toggle dismisses and unstars the task', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'issue_type' => 'Task',
+        'status' => 'To Do',
+        'status_id' => '1',
+        'is_important' => true,
+        'dismissed_at' => null,
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', []);
+
+    Http::fake();
+
+    livewire(ListJiraIssues::class)
+        ->callTableAction('updateStatusAssignee', $issue, data: ['status_id' => '1', 'dismiss' => true])
+        ->assertNotified('Task updated');
+
+    expect($issue->fresh()->dismissed_at)->not->toBeNull()
+        ->and($issue->fresh()->is_important)->toBeFalse();
 });
 
 test('the status line prompts to connect when jira is not connected', function () {
@@ -633,10 +606,10 @@ test('the view page can snooze the task', function () {
     Http::fake();
 
     livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
-        ->callAction('snooze', ['duration' => '3h'])
+        ->callAction('snooze', ['duration' => 'tomorrow'])
         ->assertNotified('Snoozed');
 
-    expect($issue->fresh()->snoozed_until->between(now()->addHours(3)->subMinute(), now()->addHours(3)->addMinute()))->toBeTrue();
+    expect($issue->fresh()->snoozed_until->equalTo(now()->addDay()->startOfDay()))->toBeTrue();
 });
 
 test('the view page can un-snooze a snoozed task', function () {
@@ -667,11 +640,11 @@ test('the view page un-snooze action is hidden when the task is not snoozed', fu
         ->assertActionHidden('unsnooze');
 });
 
-test('the view page can dismiss the task', function () {
+test('the view page can dismiss the task, which also unstars it', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    $issue = JiraIssue::factory()->for($user)->create(['dismissed_at' => null]);
+    $issue = JiraIssue::factory()->for($user)->create(['dismissed_at' => null, 'is_important' => true]);
 
     Http::fake();
 
@@ -679,7 +652,8 @@ test('the view page can dismiss the task', function () {
         ->callAction('dismiss')
         ->assertNotified('Dismissed');
 
-    expect($issue->fresh()->dismissed_at)->not->toBeNull();
+    expect($issue->fresh()->dismissed_at)->not->toBeNull()
+        ->and($issue->fresh()->is_important)->toBeFalse();
 });
 
 test('sorting the jira updated column orders by the underlying date, not the humanized text', function () {
