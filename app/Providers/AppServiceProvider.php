@@ -50,7 +50,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Date::use(CarbonImmutable::class);
 
-        Table::configureUsing(fn (Table $table): Table => $table->filtersLayout(FiltersLayout::AboveContent));
+        Table::configureUsing(fn (Table $table): Table => $table->filtersLayout(FiltersLayout::AboveContentCollapsible));
 
         DB::prohibitDestructiveCommands(
             app()->isProduction(),
