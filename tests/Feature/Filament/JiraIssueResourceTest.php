@@ -395,6 +395,7 @@ test('the sprint column renders each sprint name as a badge', function () {
 
     livewire(ListJiraIssues::class)
         ->assertCanSeeTableRecords([$issue])
+        ->toggleAllTableColumns()
         ->assertSee('Alpha Sprint')
         ->assertSee('Beta Sprint');
 });

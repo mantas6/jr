@@ -57,7 +57,8 @@ class JiraIssuesTable
                     ->badge()
                     ->color('info')
                     ->placeholder('—')
-                    ->state(fn (JiraIssue $record): array => $record->sprints ?? []),
+                    ->state(fn (JiraIssue $record): array => $record->sprints ?? [])
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('jira_updated_at')
                     ->label('Jira updated')
                     ->formatStateUsing(fn (JiraIssue $record): ?string => $record->jira_updated_at?->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE, short: true))
