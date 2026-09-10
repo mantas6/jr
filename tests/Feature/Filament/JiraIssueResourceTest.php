@@ -361,6 +361,24 @@ test('the status line prompts to connect when jira is not connected', function (
         ->assertSee('Connect');
 });
 
+test('bracketed text in the summary is rendered in bold', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'summary' => '[API] Fix broken login',
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', []);
+
+    Http::fake();
+
+    livewire(ListJiraIssues::class)
+        ->assertSeeHtml('<strong>[API]</strong> Fix broken login');
+});
+
 test('the status line shows the last sync time when connected', function () {
     $user = User::factory()->withJiraConnection()->create([
         'jira_last_synced_at' => now()->subMinutes(3),

@@ -28,10 +28,13 @@ class JiraIssuesTable
                 TextColumn::make('jira_key')
                     ->label('Key')
                     ->url(fn (JiraIssue $record): string => $record->jira_url, shouldOpenInNewTab: true)
+                    ->color('primary')
                     ->copyable()
                     ->sortable()
                     ->searchable(),
                 TextColumn::make('summary')
+                    ->html()
+                    ->formatStateUsing(fn (JiraIssue $record): string => self::boldBracketedText($record->summary))
                     ->wrap()
                     ->searchable(),
                 TextColumn::make('issue_type')
@@ -84,6 +87,19 @@ class JiraIssuesTable
     /**
      * Inline status dropdown driven by the cached Jira transitions.
      */
+    /**
+     * Escape the summary and wrap any bracketed segments (e.g. `[API]`) in bold,
+     * keeping the brackets themselves.
+     */
+    private static function boldBracketedText(?string $summary): string
+    {
+        return preg_replace_callback(
+            '/\[[^\]]*\]/',
+            static fn (array $matches): string => '<strong>'.$matches[0].'</strong>',
+            e((string) $summary),
+        ) ?? e((string) $summary);
+    }
+
     private static function issueTypeColor(?string $issueType): string
     {
         $issueType = strtolower((string) $issueType);
