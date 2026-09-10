@@ -38,7 +38,7 @@ class ViewJiraIssue extends ViewRecord
     }
 
     /**
-     * The issue's comments, ordered oldest to newest.
+     * The issue's comments, ordered newest to oldest.
      *
      * @return list<array{author: string, created: CarbonInterface|null, body: string}>
      */

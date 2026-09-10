@@ -16,7 +16,7 @@ test('map returns a null description when it is missing or empty', function () {
         ->and(JiraIssueContentMapper::map(['renderedFields' => ['description' => '   ']])['description'])->toBeNull();
 });
 
-test('map zips raw comment metadata with rendered bodies in order', function () {
+test('map zips raw comment metadata with rendered bodies, newest first', function () {
     $result = JiraIssueContentMapper::map([
         'fields' => [
             'comment' => [
@@ -37,11 +37,11 @@ test('map zips raw comment metadata with rendered bodies in order', function () 
     ]);
 
     expect($result['comments'])->toHaveCount(2)
-        ->and($result['comments'][0]['author'])->toBe('Alice')
-        ->and($result['comments'][0]['body'])->toBe('<p>First</p>')
+        ->and($result['comments'][0]['author'])->toBe('Bob')
+        ->and($result['comments'][0]['body'])->toBe('<p>Second</p>')
         ->and($result['comments'][0]['created'])->toBeInstanceOf(CarbonInterface::class)
-        ->and($result['comments'][1]['author'])->toBe('Bob')
-        ->and($result['comments'][1]['body'])->toBe('<p>Second</p>');
+        ->and($result['comments'][1]['author'])->toBe('Alice')
+        ->and($result['comments'][1]['body'])->toBe('<p>First</p>');
 });
 
 test('map falls back gracefully when comment fields are missing', function () {

@@ -32,7 +32,8 @@ class JiraIssueContentMapper
     }
 
     /**
-     * Zip raw comment metadata with the rendered comment bodies.
+     * Zip raw comment metadata with the rendered comment bodies, ordered
+     * newest to oldest (Jira returns them oldest first).
      *
      * @param  array<string, mixed>  $payload
      * @return list<array{author: string, created: CarbonInterface|null, body: string}>
@@ -65,7 +66,7 @@ class JiraIssueContentMapper
             ];
         }
 
-        return $comments;
+        return array_reverse($comments);
     }
 
     /**
