@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Http;
 
 test('guests are redirected to login', function () {
     $this->get(JiraConnection::getUrl())
-        ->assertRedirect('/admin/login');
+        ->assertRedirect('/login');
 });
 
 test('an authenticated user can render the page', function () {
@@ -19,7 +19,7 @@ test('an authenticated user can render the page', function () {
 });
 
 test('a guest can register and lands authenticated', function () {
-    $this->get('/admin/register')->assertOk();
+    $this->get('/register')->assertOk();
 
     livewire(Register::class)
         ->fillForm([
