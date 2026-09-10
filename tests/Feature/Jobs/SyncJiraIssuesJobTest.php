@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraTransitionsCache;
 use Illuminate\Http\Client\Request;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -281,6 +282,18 @@ test('the job is unique per user so a duplicate dispatch is ignored', function (
     SyncJiraIssuesJob::dispatch($user);
 
     Queue::assertPushed(SyncJiraIssuesJob::class, 1);
+});
+
+test('the job refuses to overlap per user and drops the duplicate', function () {
+    $user = syncUser();
+
+    $middleware = collect((new SyncJiraIssuesJob($user))->middleware())
+        ->firstWhere(fn ($m): bool => $m instanceof WithoutOverlapping);
+
+    expect($middleware)->not->toBeNull()
+        ->and($middleware->key)->toBe((string) $user->id)
+        ->and($middleware->releaseAfter)->toBeNull()
+        ->and($middleware->expiresAfter)->toBe(600);
 });
 
 test('a successful sync dispatches the mentions scan job', function () {

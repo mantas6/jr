@@ -81,7 +81,11 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
      */
     public function middleware(): array
     {
-        return [(new WithoutOverlapping((string) $this->user->id))->expireAfter(600)];
+        return [
+            (new WithoutOverlapping((string) $this->user->id))
+                ->dontRelease()
+                ->expireAfter(600),
+        ];
     }
 
     /**

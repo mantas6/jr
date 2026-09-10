@@ -8,4 +8,7 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('jira:sync')->everyFifteenMinutes()->withoutOverlapping();
+Schedule::command('jira:sync')
+    ->everyFiveMinutes()
+    ->between('8:00', '16:00')
+    ->withoutOverlapping();
