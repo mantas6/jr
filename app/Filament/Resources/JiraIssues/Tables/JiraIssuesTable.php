@@ -35,7 +35,8 @@ class JiraIssuesTable
                     ->searchable(),
                 TextColumn::make('issue_type')
                     ->label('Type')
-                    ->badge(),
+                    ->badge()
+                    ->color(fn (JiraIssue $record): string => self::issueTypeColor($record->issue_type)),
                 self::statusColumn(),
                 self::assigneeColumn(),
                 TextColumn::make('priority'),
@@ -82,6 +83,19 @@ class JiraIssuesTable
     /**
      * Inline status dropdown driven by the cached Jira transitions.
      */
+    private static function issueTypeColor(?string $issueType): string
+    {
+        return match (strtolower((string) $issueType)) {
+            'bug' => 'danger',
+            'story' => 'success',
+            'task' => 'info',
+            'sub-task', 'subtask' => 'gray',
+            'epic' => 'primary',
+            'improvement', 'new feature' => 'warning',
+            default => 'gray',
+        };
+    }
+
     private static function statusColumn(): SelectColumn
     {
         return SelectColumn::make('status_id')
