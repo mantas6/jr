@@ -64,6 +64,7 @@ class JiraIssuesTable
                 TextColumn::make('jira_updated_at')
                     ->label('Jira updated')
                     ->formatStateUsing(fn (JiraIssue $record): ?string => $record->jira_updated_at?->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE, short: true))
+                    ->tooltip(fn (JiraIssue $record): ?string => $record->jira_updated_at?->toDayDateTimeString())
                     ->sortable(),
                 TextColumn::make('last_synced_at')
                     ->label('Last synced')

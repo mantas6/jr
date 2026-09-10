@@ -32,7 +32,7 @@ class AdminPanelProvider extends PanelProvider
             ->registration()
             ->profile()
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::Blue,
             ])
             ->sidebarCollapsibleOnDesktop()
             ->maxContentWidth(Width::Full)

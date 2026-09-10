@@ -521,6 +521,35 @@ test('the view page edit actions are hidden without a jira connection', function
         ->assertActionHidden('reassign');
 });
 
+test('sorting the jira updated column orders by the underlying date, not the humanized text', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    Http::fake();
+
+    $oldest = JiraIssue::factory()->for($user)->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'jira_updated_at' => '2020-01-01 00:00:00',
+    ]);
+    $middle = JiraIssue::factory()->for($user)->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'jira_updated_at' => '2023-06-15 00:00:00',
+    ]);
+    $newest = JiraIssue::factory()->for($user)->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'jira_updated_at' => '2025-12-31 00:00:00',
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', []);
+
+    livewire(ListJiraIssues::class)
+        ->sortTable('jira_updated_at', 'asc')
+        ->assertCanSeeTableRecords([$oldest, $middle, $newest], inOrder: true);
+});
+
 test('the status line shows the last sync time when connected', function () {
     $user = User::factory()->withJiraConnection()->create([
         'jira_last_synced_at' => now()->subMinutes(3),
