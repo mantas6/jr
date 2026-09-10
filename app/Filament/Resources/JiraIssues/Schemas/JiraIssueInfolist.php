@@ -7,6 +7,7 @@ use App\Filament\Resources\JiraIssues\Tables\JiraIssuesTable;
 use App\Models\JiraIssue;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -90,20 +91,29 @@ class JiraIssueInfolist
                                             ->state(fn (ViewJiraIssue $livewire): array => $livewire->comments())
                                             ->placeholder('No comments')
                                             ->schema([
-                                                TextEntry::make('author')
-                                                    ->label('Author')
-                                                    ->weight('bold'),
-                                                TextEntry::make('created')
-                                                    ->label('Posted')
-                                                    ->dateTime()
-                                                    ->placeholder('—'),
+                                                Fieldset::make('Details')
+                                                    ->columnSpanFull()
+                                                    ->columns(3)
+                                                    ->schema([
+                                                        TextEntry::make('author')
+                                                            ->label('Author')
+                                                            ->weight('bold'),
+                                                        TextEntry::make('created')
+                                                            ->label('Posted')
+                                                            ->dateTime()
+                                                            ->placeholder('—'),
+                                                        TextEntry::make('created')
+                                                            ->label('Ago')
+                                                            ->since()
+                                                            ->placeholder('—'),
+                                                    ]),
                                                 TextEntry::make('body')
                                                     ->hiddenLabel()
                                                     ->html()
                                                     ->prose()
                                                     ->columnSpanFull(),
                                             ])
-                                            ->columns(2),
+                                            ->columns(1),
                                     ]),
                             ])
                             ->deferLoading(),

@@ -24,7 +24,7 @@ class ListConcerningTasks extends ListRecords
      */
     protected function getTableQuery(): ?Builder
     {
-        return parent::getTableQuery()?->concerningFor($this->currentUser());
+        return JiraIssueResource::getEloquentQuery()->concerningFor($this->currentUser());
     }
 
     private function currentUser(): User

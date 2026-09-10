@@ -69,12 +69,12 @@ class JiraIssuesTable
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('jira_updated_at')
                     ->label('Jira updated')
-                    ->formatStateUsing(fn (JiraIssue $record): ?string => $record->jira_updated_at?->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE, short: true))
-                    ->tooltip(fn (JiraIssue $record): ?string => $record->jira_updated_at?->toDayDateTimeString())
+                    ->formatStateUsing(fn (JiraIssue $record): string => $record->jira_updated_at->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE, short: true))
+                    ->tooltip(fn (JiraIssue $record): string => $record->jira_updated_at->toDayDateTimeString())
                     ->sortable(),
                 TextColumn::make('last_synced_at')
                     ->label('Last synced')
-                    ->formatStateUsing(fn (JiraIssue $record): ?string => $record->last_synced_at?->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE, short: true))
+                    ->formatStateUsing(fn (JiraIssue $record): string => $record->last_synced_at->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE, short: true))
                     ->color(fn (JiraIssue $record): ?string => self::isStale($record) ? 'warning' : null)
                     ->description(fn (JiraIssue $record): ?string => self::isStale($record) ? 'Stale' : null)
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -472,7 +472,10 @@ class JiraIssuesTable
             ->icon(Heroicon::OutlinedCheck)
             ->color('gray')
             ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
-            ->action(fn (Collection $records) => $records->each(fn (JiraIssue $record) => self::dismissRecord($record)))
+            ->action(fn (Collection $records) => $records->each->update([
+                'dismissed_at' => Carbon::now(),
+                'is_important' => false,
+            ]))
             ->deselectRecordsAfterCompletion();
     }
 

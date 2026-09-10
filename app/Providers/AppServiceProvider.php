@@ -50,7 +50,9 @@ class AppServiceProvider extends ServiceProvider
     {
         Date::use(CarbonImmutable::class);
 
-        Table::configureUsing(fn (Table $table): Table => $table->filtersLayout(FiltersLayout::AboveContentCollapsible));
+        Table::configureUsing(fn (Table $table): Table => $table
+            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
+            ->defaultPaginationPageOption(50));
 
         DB::prohibitDestructiveCommands(
             app()->isProduction(),

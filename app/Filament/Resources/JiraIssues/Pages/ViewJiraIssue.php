@@ -22,6 +22,14 @@ class ViewJiraIssue extends ViewRecord
     protected static string $resource = JiraIssueResource::class;
 
     /**
+     * Show the Jira task number (e.g. PROJ-123) as the page title.
+     */
+    public function getTitle(): string
+    {
+        return $this->currentRecord()->jira_key;
+    }
+
+    /**
      * The issue's description and comments, fetched live from Jira.
      *
      * @var array{description: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string}>}|null
@@ -79,12 +87,25 @@ class ViewJiraIssue extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            $this->openInJiraAction(),
             JiraIssuesTable::updateStatusAssigneeAction(),
             $this->toggleImportantAction(),
             $this->snoozeAction(),
             $this->unsnoozeAction(),
             $this->dismissAction(),
         ];
+    }
+
+    /**
+     * Open the task directly in Jira in a new tab.
+     */
+    private function openInJiraAction(): Action
+    {
+        return Action::make('openInJira')
+            ->label('Open in Jira')
+            ->icon(Heroicon::OutlinedArrowTopRightOnSquare)
+            ->color('gray')
+            ->url(fn (): string => $this->currentRecord()->jira_url, shouldOpenInNewTab: true);
     }
 
     /**
