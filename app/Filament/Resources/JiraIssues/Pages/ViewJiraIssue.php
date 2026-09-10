@@ -82,7 +82,105 @@ class ViewJiraIssue extends ViewRecord
         return [
             $this->changeStatusAction(),
             $this->reassignAction(),
+            $this->toggleImportantAction(),
+            $this->snoozeAction(),
+            $this->unsnoozeAction(),
+            $this->dismissAction(),
         ];
+    }
+
+    /**
+     * Toggle the important (starred) flag on the issue.
+     */
+    private function toggleImportantAction(): Action
+    {
+        return Action::make('toggleImportant')
+            ->label(fn (): string => $this->currentRecord()->is_important ? 'Unstar' : 'Star')
+            ->icon(fn (): Heroicon => $this->currentRecord()->is_important ? Heroicon::Star : Heroicon::OutlinedStar)
+            ->color(fn (): string => $this->currentRecord()->is_important ? 'warning' : 'gray')
+            ->action(function (): void {
+                $record = $this->currentRecord();
+                $record->update(['is_important' => ! $record->is_important]);
+
+                Notification::make()->success()->title($record->is_important ? 'Marked important' : 'Unstarred')->send();
+            });
+    }
+
+    /**
+     * Snooze the issue for a chosen window.
+     */
+    private function snoozeAction(): Action
+    {
+        return Action::make('snooze')
+            ->label('Snooze')
+            ->icon(Heroicon::OutlinedClock)
+            ->color('gray')
+            ->schema([
+                Select::make('duration')
+                    ->label('Snooze for')
+                    ->options([
+                        '3h' => '3 hours',
+                        '1d' => '1 day',
+                        '3d' => '3 days',
+                        '1w' => '1 week',
+                    ])
+                    ->default('1d')
+                    ->required(),
+            ])
+            ->action(function (array $data): void {
+                $this->currentRecord()->update(['snoozed_until' => $this->snoozeUntil($data['duration'])]);
+
+                Notification::make()->success()->title('Snoozed')->send();
+            });
+    }
+
+    /**
+     * Clear an active snooze on the issue.
+     */
+    private function unsnoozeAction(): Action
+    {
+        return Action::make('unsnooze')
+            ->label('Un-snooze')
+            ->icon(Heroicon::OutlinedBellSlash)
+            ->color('gray')
+            ->visible(fn (): bool => filled($this->currentRecord()->snoozed_until))
+            ->action(function (): void {
+                $this->currentRecord()->update(['snoozed_until' => null]);
+
+                Notification::make()->success()->title('Un-snoozed')->send();
+            });
+    }
+
+    /**
+     * Dismiss the issue until Jira reports newer activity.
+     */
+    private function dismissAction(): Action
+    {
+        return Action::make('dismiss')
+            ->label('Dismiss')
+            ->icon(Heroicon::OutlinedCheck)
+            ->color('gray')
+            ->action(function (): void {
+                $this->currentRecord()->update(['dismissed_at' => now()]);
+
+                Notification::make()->success()->title('Dismissed')->send();
+            });
+    }
+
+    /**
+     * Resolve a snooze duration token into an absolute timestamp.
+     */
+    private function snoozeUntil(string $duration): CarbonInterface
+    {
+        $now = now();
+
+        return match ($duration) {
+            '3h' => $now->addHours(3),
+            '1d' => $now->addDay(),
+            '3d' => $now->addDays(3),
+            '1w' => $now->addWeek(),
+            default => $now,
+        };
     }
 
     /**

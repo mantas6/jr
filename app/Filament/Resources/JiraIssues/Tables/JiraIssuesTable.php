@@ -13,6 +13,7 @@ use App\Services\Jira\JiraIssueActions;
 use App\Services\Jira\JiraTransitionsCache;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
@@ -22,6 +23,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
@@ -101,6 +103,11 @@ class JiraIssuesTable
                 self::snoozeAction(),
                 self::unsnoozeAction(),
                 self::dismissAction(),
+            ])
+            ->toolbarActions([
+                self::bulkStarAction(),
+                self::bulkSnoozeAction(),
+                self::bulkDismissAction(),
             ])
             ->headerActions([
                 Action::make('sync')
@@ -348,6 +355,65 @@ class JiraIssuesTable
             ->iconButton()
             ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
             ->action(fn (JiraIssue $record) => $record->update(['dismissed_at' => Carbon::now()]));
+    }
+
+    /**
+     * Bulk star the selected tasks. Only on the concerning list.
+     */
+    private static function bulkStarAction(): BulkAction
+    {
+        return BulkAction::make('bulkStar')
+            ->label('Star')
+            ->icon(Heroicon::Star)
+            ->color('warning')
+            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+            ->action(fn (Collection $records) => $records->each->update(['is_important' => true]))
+            ->deselectRecordsAfterCompletion();
+    }
+
+    /**
+     * Bulk snooze the selected tasks for a chosen window. Only on the
+     * concerning list.
+     */
+    private static function bulkSnoozeAction(): BulkAction
+    {
+        return BulkAction::make('bulkSnooze')
+            ->label('Snooze')
+            ->icon(Heroicon::OutlinedClock)
+            ->color('gray')
+            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+            ->schema([
+                Select::make('duration')
+                    ->label('Snooze for')
+                    ->options([
+                        '3h' => '3 hours',
+                        '1d' => '1 day',
+                        '3d' => '3 days',
+                        '1w' => '1 week',
+                    ])
+                    ->default('1d')
+                    ->required(),
+            ])
+            ->action(function (Collection $records, array $data): void {
+                $until = self::snoozeUntil($data['duration']);
+
+                $records->each->update(['snoozed_until' => $until]);
+            })
+            ->deselectRecordsAfterCompletion();
+    }
+
+    /**
+     * Bulk dismiss the selected tasks. Only on the concerning list.
+     */
+    private static function bulkDismissAction(): BulkAction
+    {
+        return BulkAction::make('bulkDismiss')
+            ->label('Dismiss')
+            ->icon(Heroicon::OutlinedCheck)
+            ->color('gray')
+            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+            ->action(fn (Collection $records) => $records->each->update(['dismissed_at' => Carbon::now()]))
+            ->deselectRecordsAfterCompletion();
     }
 
     /**

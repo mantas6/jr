@@ -112,6 +112,49 @@ test('the un-snooze action is hidden when the task is not snoozed', function () 
         ->assertTableActionHidden('unsnooze', $issue);
 });
 
+test('bulk starring marks every selected task important', function () {
+    $issues = JiraIssue::factory()->for($this->user)->mentionsMe()->count(3)->create();
+
+    livewire(ListConcerningTasks::class)
+        ->callTableBulkAction('bulkStar', $issues);
+
+    $issues->each(fn (JiraIssue $issue) => expect($issue->fresh()->is_important)->toBeTrue());
+});
+
+test('bulk snoozing sets the window on every selected task', function () {
+    $issues = JiraIssue::factory()->for($this->user)->important()->count(3)->create();
+
+    livewire(ListConcerningTasks::class)
+        ->callTableBulkAction('bulkSnooze', $issues, data: ['duration' => '1w']);
+
+    $issues->each(function (JiraIssue $issue): void {
+        expect($issue->fresh()->snoozed_until)->not->toBeNull()
+            ->and($issue->fresh()->snoozed_until->between(now()->addWeek()->subMinute(), now()->addWeek()->addMinute()))->toBeTrue();
+    });
+});
+
+test('bulk dismissing stamps every selected task', function () {
+    $issue = JiraIssue::factory()->for($this->user)->create([
+        'assignee_account_id' => 'acc-me',
+        'jira_updated_at' => now(),
+        'dismissed_at' => null,
+    ]);
+
+    livewire(ListConcerningTasks::class)
+        ->callTableBulkAction('bulkDismiss', collect([$issue]));
+
+    expect($issue->fresh()->dismissed_at)->not->toBeNull();
+});
+
+test('the bulk actions are hidden on the full task list', function () {
+    JiraIssue::factory()->for($this->user)->important()->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertTableBulkActionHidden('bulkStar')
+        ->assertTableBulkActionHidden('bulkSnooze')
+        ->assertTableBulkActionHidden('bulkDismiss');
+});
+
 test('the resource registers two navigation items with concerning tasks on top', function () {
     JiraIssue::factory()->for($this->user)->important()->count(2)->create();
 

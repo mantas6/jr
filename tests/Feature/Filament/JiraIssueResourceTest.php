@@ -609,6 +609,79 @@ test('the view page edit actions are hidden without a jira connection', function
         ->assertActionHidden('reassign');
 });
 
+test('the view page can toggle the important flag without a jira connection', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create(['is_important' => false]);
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->callAction('toggleImportant')
+        ->assertNotified('Marked important');
+
+    expect($issue->fresh()->is_important)->toBeTrue();
+});
+
+test('the view page can snooze the task', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create(['snoozed_until' => null]);
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->callAction('snooze', ['duration' => '3h'])
+        ->assertNotified('Snoozed');
+
+    expect($issue->fresh()->snoozed_until->between(now()->addHours(3)->subMinute(), now()->addHours(3)->addMinute()))->toBeTrue();
+});
+
+test('the view page can un-snooze a snoozed task', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create(['snoozed_until' => now()->addHour()]);
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertActionVisible('unsnooze')
+        ->callAction('unsnooze')
+        ->assertNotified('Un-snoozed');
+
+    expect($issue->fresh()->snoozed_until)->toBeNull();
+});
+
+test('the view page un-snooze action is hidden when the task is not snoozed', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create(['snoozed_until' => null]);
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertActionHidden('unsnooze');
+});
+
+test('the view page can dismiss the task', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create(['dismissed_at' => null]);
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->callAction('dismiss')
+        ->assertNotified('Dismissed');
+
+    expect($issue->fresh()->dismissed_at)->not->toBeNull();
+});
+
 test('sorting the jira updated column orders by the underlying date, not the humanized text', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
