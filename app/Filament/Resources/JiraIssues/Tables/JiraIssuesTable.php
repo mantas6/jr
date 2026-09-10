@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\JiraIssues\Tables;
 
 use App\Filament\Resources\JiraIssues\JiraIssueResource;
+use App\Filament\Resources\JiraIssues\Pages\ListConcerningTasks;
 use App\Jobs\SyncJiraIssuesJob;
 use App\Models\JiraIssue;
 use App\Models\User;
@@ -12,13 +13,16 @@ use App\Services\Jira\JiraIssueActions;
 use App\Services\Jira\JiraTransitionsCache;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\SelectColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
 class JiraIssuesTable
@@ -92,6 +96,12 @@ class JiraIssuesTable
             ])
             ->recordUrl(fn (JiraIssue $record): string => JiraIssueResource::getUrl('view', ['record' => $record]))
             ->defaultSort('jira_updated_at', 'desc')
+            ->recordActions([
+                self::starAction(),
+                self::snoozeAction(),
+                self::unsnoozeAction(),
+                self::dismissAction(),
+            ])
             ->headerActions([
                 Action::make('sync')
                     ->label('Sync from Jira')
@@ -268,6 +278,92 @@ class JiraIssuesTable
                     return ['error' => $exception->getMessage()];
                 }
             });
+    }
+
+    /**
+     * Toggle the important (starred) flag. Available on both task lists.
+     */
+    private static function starAction(): Action
+    {
+        return Action::make('toggleImportant')
+            ->label(fn (JiraIssue $record): string => $record->is_important ? 'Unstar' : 'Star')
+            ->icon(fn (JiraIssue $record): Heroicon => $record->is_important ? Heroicon::Star : Heroicon::OutlinedStar)
+            ->color(fn (JiraIssue $record): string => $record->is_important ? 'warning' : 'gray')
+            ->iconButton()
+            ->action(fn (JiraIssue $record) => $record->update(['is_important' => ! $record->is_important]));
+    }
+
+    /**
+     * Snooze the task for a chosen window. Only on the concerning list.
+     */
+    private static function snoozeAction(): Action
+    {
+        return Action::make('snooze')
+            ->icon(Heroicon::OutlinedClock)
+            ->color('gray')
+            ->iconButton()
+            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+            ->schema([
+                Select::make('duration')
+                    ->label('Snooze for')
+                    ->options([
+                        '3h' => '3 hours',
+                        '1d' => '1 day',
+                        '3d' => '3 days',
+                        '1w' => '1 week',
+                    ])
+                    ->default('1d')
+                    ->required(),
+            ])
+            ->action(function (JiraIssue $record, array $data): void {
+                $record->update(['snoozed_until' => self::snoozeUntil($data['duration'])]);
+            });
+    }
+
+    /**
+     * Clear an active snooze. Shown wherever a snoozed task is visible; since a
+     * snoozed task is hidden from the concerning list, this surfaces on the full
+     * task list so the snooze can be lifted.
+     */
+    private static function unsnoozeAction(): Action
+    {
+        return Action::make('unsnooze')
+            ->label('Un-snooze')
+            ->icon(Heroicon::OutlinedBellSlash)
+            ->color('gray')
+            ->iconButton()
+            ->visible(fn (JiraIssue $record): bool => filled($record->snoozed_until))
+            ->action(fn (JiraIssue $record) => $record->update(['snoozed_until' => null]));
+    }
+
+    /**
+     * Dismiss the task until Jira reports newer activity. Only on the
+     * concerning list.
+     */
+    private static function dismissAction(): Action
+    {
+        return Action::make('dismiss')
+            ->icon(Heroicon::OutlinedCheck)
+            ->color('gray')
+            ->iconButton()
+            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+            ->action(fn (JiraIssue $record) => $record->update(['dismissed_at' => Carbon::now()]));
+    }
+
+    /**
+     * Resolve a snooze duration token into an absolute timestamp.
+     */
+    private static function snoozeUntil(string $duration): Carbon
+    {
+        $now = Carbon::now();
+
+        return match ($duration) {
+            '3h' => $now->addHours(3),
+            '1d' => $now->addDay(),
+            '3d' => $now->addDays(3),
+            '1w' => $now->addWeek(),
+            default => $now,
+        };
     }
 
     /**

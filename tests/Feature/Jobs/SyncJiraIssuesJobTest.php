@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\SyncJiraIssuesJob;
+use App\Jobs\SyncJiraMentionsJob;
 use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
@@ -9,6 +10,10 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+
+// The sync job dispatches the mentions job at the end; fake the queue so the
+// synchronous test connection does not run it inline (and exhaust HTTP fakes).
+beforeEach(fn () => Queue::fake());
 
 /**
  * Build a connected user for the sync job.
@@ -276,4 +281,24 @@ test('the job is unique per user so a duplicate dispatch is ignored', function (
     SyncJiraIssuesJob::dispatch($user);
 
     Queue::assertPushed(SyncJiraIssuesJob::class, 1);
+});
+
+test('a successful sync dispatches the mentions scan job', function () {
+    $user = syncUser();
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
+        '*/rest/api/3/search/jql*' => Http::response([
+            'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'First issue')],
+            'isLast' => true,
+        ]),
+        '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
+    ]);
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    Queue::assertPushed(
+        SyncJiraMentionsJob::class,
+        fn (SyncJiraMentionsJob $job): bool => $job->user->is($user),
+    );
 });

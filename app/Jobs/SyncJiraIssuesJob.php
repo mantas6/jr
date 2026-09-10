@@ -133,6 +133,8 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
             'jira_last_synced_at' => $now,
             'jira_last_sync_error' => null,
         ])->save();
+
+        SyncJiraMentionsJob::dispatch($this->user);
     }
 
     /**

@@ -1,0 +1,130 @@
+<?php
+
+use App\Filament\Resources\JiraIssues\JiraIssueResource;
+use App\Filament\Resources\JiraIssues\Pages\ListConcerningTasks;
+use App\Filament\Resources\JiraIssues\Pages\ListJiraIssues;
+use App\Models\JiraIssue;
+use App\Models\User;
+use Illuminate\Support\Facades\Http;
+
+beforeEach(function () {
+    Http::fake();
+
+    // A local Jira account id is enough to drive the concerning scope; without a
+    // full connection the status/assignee columns stay local and hit no HTTP.
+    $this->user = User::factory()->create(['jira_account_id' => 'acc-me']);
+    $this->actingAs($this->user);
+});
+
+test('the concerning page only shows tasks that need attention', function () {
+    $important = JiraIssue::factory()->for($this->user)->important()->create();
+    $quiet = JiraIssue::factory()->for($this->user)->create([
+        'assignee_account_id' => 'acc-someone',
+        'is_important' => false,
+        'mentions_me' => false,
+    ]);
+
+    livewire(ListConcerningTasks::class)
+        ->assertCanSeeTableRecords([$important])
+        ->assertCanNotSeeTableRecords([$quiet]);
+});
+
+test('starring a task from the full list marks it important', function () {
+    $issue = JiraIssue::factory()->for($this->user)->create(['is_important' => false]);
+
+    livewire(ListJiraIssues::class)
+        ->callTableAction('toggleImportant', $issue);
+
+    expect($issue->fresh()->is_important)->toBeTrue();
+
+    livewire(ListJiraIssues::class)
+        ->callTableAction('toggleImportant', $issue->fresh());
+
+    expect($issue->fresh()->is_important)->toBeFalse();
+});
+
+test('snoozing a task sets the snooze window on the concerning list', function () {
+    $issue = JiraIssue::factory()->for($this->user)->important()->create();
+
+    livewire(ListConcerningTasks::class)
+        ->callTableAction('snooze', $issue, data: ['duration' => '3h']);
+
+    expect($issue->fresh()->snoozed_until)->not->toBeNull()
+        ->and($issue->fresh()->snoozed_until->between(now()->addHours(3)->subMinute(), now()->addHours(3)->addMinute()))->toBeTrue();
+});
+
+test('each snooze duration maps to the expected window', function (string $duration, Closure $expected) {
+    $issue = JiraIssue::factory()->for($this->user)->important()->create();
+
+    livewire(ListConcerningTasks::class)
+        ->callTableAction('snooze', $issue, data: ['duration' => $duration]);
+
+    $target = $expected();
+
+    expect($issue->fresh()->snoozed_until->between($target->copy()->subMinute(), $target->copy()->addMinute()))->toBeTrue();
+})->with([
+    ['3h', fn () => now()->addHours(3)],
+    ['1d', fn () => now()->addDay()],
+    ['3d', fn () => now()->addDays(3)],
+    ['1w', fn () => now()->addWeek()],
+]);
+
+test('dismissing a task stamps the dismissed_at column', function () {
+    $issue = JiraIssue::factory()->for($this->user)->create([
+        'assignee_account_id' => 'acc-me',
+        'jira_updated_at' => now(),
+        'dismissed_at' => null,
+    ]);
+
+    livewire(ListConcerningTasks::class)
+        ->callTableAction('dismiss', $issue);
+
+    expect($issue->fresh()->dismissed_at)->not->toBeNull();
+});
+
+test('un-snoozing a task from the full list clears the snooze window', function () {
+    // Snoozed tasks are hidden from the concerning list, so the un-snooze action
+    // surfaces on the full task list where the record is still visible.
+    $issue = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertTableActionVisible('unsnooze', $issue)
+        ->callTableAction('unsnooze', $issue);
+
+    expect($issue->fresh()->snoozed_until)->toBeNull();
+});
+
+test('the snooze and dismiss actions are hidden on the full task list', function () {
+    $issue = JiraIssue::factory()->for($this->user)->important()->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertTableActionVisible('toggleImportant', $issue)
+        ->assertTableActionHidden('snooze', $issue)
+        ->assertTableActionHidden('dismiss', $issue)
+        ->assertTableActionHidden('unsnooze', $issue);
+});
+
+test('the un-snooze action is hidden when the task is not snoozed', function () {
+    $issue = JiraIssue::factory()->for($this->user)->important()->create(['snoozed_until' => null]);
+
+    livewire(ListConcerningTasks::class)
+        ->assertTableActionVisible('snooze', $issue)
+        ->assertTableActionHidden('unsnooze', $issue);
+});
+
+test('the resource registers two navigation items with a concerning badge', function () {
+    JiraIssue::factory()->for($this->user)->important()->count(2)->create();
+
+    $items = JiraIssueResource::getNavigationItems();
+
+    expect($items)->toHaveCount(2)
+        ->and($items[0]->getLabel())->toBe('Tasks')
+        ->and($items[1]->getLabel())->toBe('Concerning Tasks')
+        ->and($items[1]->getBadge())->toBe('2');
+});
+
+test('the concerning badge is null when nothing needs attention', function () {
+    $items = JiraIssueResource::getNavigationItems();
+
+    expect($items[1]->getBadge())->toBeNull();
+});

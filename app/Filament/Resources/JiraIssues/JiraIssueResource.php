@@ -2,18 +2,23 @@
 
 namespace App\Filament\Resources\JiraIssues;
 
+use App\Filament\Resources\JiraIssues\Pages\ListConcerningTasks;
 use App\Filament\Resources\JiraIssues\Pages\ListJiraIssues;
 use App\Filament\Resources\JiraIssues\Pages\ViewJiraIssue;
 use App\Filament\Resources\JiraIssues\Schemas\JiraIssueInfolist;
 use App\Filament\Resources\JiraIssues\Tables\JiraIssuesTable;
 use App\Models\JiraIssue;
+use App\Models\User;
 use BackedEnum;
+use Filament\Navigation\NavigationItem;
 use Filament\Resources\Pages\PageRegistration;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+
+use function Filament\Support\original_request;
 
 /**
  * @extends resource<JiraIssue>
@@ -64,7 +69,51 @@ class JiraIssueResource extends Resource
     {
         return [
             'index' => ListJiraIssues::route('/'),
+            'concerning' => ListConcerningTasks::route('/concerning'),
             'view' => ViewJiraIssue::route('/{record}'),
         ];
+    }
+
+    /**
+     * Register two sibling navigation items: the full task list and the
+     * attention-driven "Concerning Tasks" list (with a live count badge).
+     *
+     * @return array<int, NavigationItem>
+     */
+    public static function getNavigationItems(): array
+    {
+        $base = static::getRouteBaseName();
+        $concerningCount = static::concerningCount();
+
+        return [
+            NavigationItem::make('Tasks')
+                ->icon(Heroicon::OutlinedRectangleStack)
+                ->sort(10)
+                ->isActiveWhen(fn (): bool => original_request()->routeIs($base.'.index', $base.'.view'))
+                ->url(fn (): string => ListJiraIssues::getUrl()),
+            NavigationItem::make('Concerning Tasks')
+                ->icon(Heroicon::OutlinedBellAlert)
+                ->sort(11)
+                ->badge($concerningCount > 0 ? (string) $concerningCount : null, color: 'warning')
+                ->isActiveWhen(fn (): bool => original_request()->routeIs($base.'.concerning'))
+                ->url(fn (): string => ListConcerningTasks::getUrl()),
+        ];
+    }
+
+    /**
+     * Count the current user's tasks that currently need attention.
+     */
+    protected static function concerningCount(): int
+    {
+        $user = auth()->user();
+
+        if (! $user instanceof User) {
+            return 0;
+        }
+
+        return JiraIssue::query()
+            ->where('user_id', $user->id)
+            ->concerningFor($user)
+            ->count();
     }
 }
