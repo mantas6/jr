@@ -3,11 +3,14 @@
 namespace App\Filament\Resources\JiraIssues;
 
 use App\Filament\Resources\JiraIssues\Pages\ListJiraIssues;
+use App\Filament\Resources\JiraIssues\Pages\ViewJiraIssue;
+use App\Filament\Resources\JiraIssues\Schemas\JiraIssueInfolist;
 use App\Filament\Resources\JiraIssues\Tables\JiraIssuesTable;
 use App\Models\JiraIssue;
 use BackedEnum;
 use Filament\Resources\Pages\PageRegistration;
 use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -34,6 +37,11 @@ class JiraIssueResource extends Resource
         return JiraIssuesTable::configure($table);
     }
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return JiraIssueInfolist::configure($schema);
+    }
+
     /**
      * Scope the resource to the currently authenticated user's issues.
      *
@@ -56,6 +64,7 @@ class JiraIssueResource extends Resource
     {
         return [
             'index' => ListJiraIssues::route('/'),
+            'view' => ViewJiraIssue::route('/{record}'),
         ];
     }
 }

@@ -2,6 +2,7 @@
 
 use App\Filament\Resources\JiraIssues\JiraIssueResource;
 use App\Filament\Resources\JiraIssues\Pages\ListJiraIssues;
+use App\Filament\Resources\JiraIssues\Pages\ViewJiraIssue;
 use App\Jobs\SyncJiraIssuesJob;
 use App\Models\JiraIssue;
 use App\Models\User;
@@ -423,6 +424,101 @@ test('the sprint filter narrows to the selected sprint without partial-name fals
         ->filterTable('sprint', 'Sprint 1')
         ->assertCanSeeTableRecords([$inSprintOne])
         ->assertCanNotSeeTableRecords([$inSprintTen]);
+});
+
+test('the view page renders all task data for the owner', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'summary' => 'Detailed task summary',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'reporter_name' => 'Rita Reporter',
+        'sprints' => ['Sprint Alpha'],
+    ]);
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertOk()
+        ->assertSee('Detailed task summary')
+        ->assertSee('Rita Reporter')
+        ->assertSee('Sprint Alpha');
+
+    Http::assertNothingSent();
+});
+
+test('changing status from the view page transitions the issue in jira', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-50',
+        'issue_type' => 'Task',
+        'status' => 'To Do',
+        'status_id' => '1',
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', [
+        ['id' => '31', 'to_id' => '2', 'to_name' => 'In Progress'],
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-50/transitions' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-50*' => Http::response(resourceIssuePayload('PROJ-50')),
+    ]);
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->callAction('changeStatus', ['status_id' => '2'])
+        ->assertNotified('Status updated');
+
+    expect($issue->fresh()->status_id)->toBe('2')
+        ->and($issue->fresh()->status)->toBe('In Progress');
+});
+
+test('reassigning from the view page assigns the issue in jira', function () {
+    $user = User::factory()->withJiraConnection()->create([
+        'jira_account_id' => 'acc-me',
+        'name' => 'Me McGee',
+        'jira_last_synced_at' => now(),
+    ]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-51',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'assignee_account_id' => null,
+        'assignee_name' => null,
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-51/assignee' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-51*' => Http::response(resourceIssuePayload('PROJ-51', [
+            'assignee' => ['accountId' => 'acc-me', 'displayName' => 'Me McGee'],
+        ])),
+    ]);
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->callAction('reassign', ['assignee_account_id' => 'acc-me'])
+        ->assertNotified('Assignee updated');
+
+    expect($issue->fresh()->assignee_account_id)->toBe('acc-me')
+        ->and($issue->fresh()->assignee_name)->toBe('Me McGee');
+});
+
+test('the view page edit actions are hidden without a jira connection', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create();
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertActionHidden('changeStatus')
+        ->assertActionHidden('reassign');
 });
 
 test('the status line shows the last sync time when connected', function () {

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\JiraIssues\Tables;
 
+use App\Filament\Resources\JiraIssues\JiraIssueResource;
 use App\Jobs\SyncJiraIssuesJob;
 use App\Models\JiraIssue;
 use App\Models\User;
@@ -51,7 +52,8 @@ class JiraIssuesTable
                     ->color(fn (JiraIssue $record): string => self::issueTypeColor($record->issue_type)),
                 self::statusColumn(),
                 self::assigneeColumn(),
-                TextColumn::make('priority'),
+                TextColumn::make('priority')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('sprints')
                     ->label('Sprint')
                     ->badge()
@@ -92,6 +94,7 @@ class JiraIssuesTable
                         return $query->where('sprints', 'like', '%'.json_encode($value).'%');
                     }),
             ])
+            ->recordUrl(fn (JiraIssue $record): string => JiraIssueResource::getUrl('view', ['record' => $record]))
             ->defaultSort('jira_updated_at', 'desc')
             ->headerActions([
                 Action::make('sync')
@@ -127,7 +130,7 @@ class JiraIssuesTable
         ) ?? e((string) $summary);
     }
 
-    private static function issueTypeColor(?string $issueType): string
+    public static function issueTypeColor(?string $issueType): string
     {
         $issueType = strtolower((string) $issueType);
 
