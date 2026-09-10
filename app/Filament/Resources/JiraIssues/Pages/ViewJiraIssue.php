@@ -22,19 +22,19 @@ class ViewJiraIssue extends ViewRecord
     protected static string $resource = JiraIssueResource::class;
 
     /**
+     * The issue's description and comments, fetched live from Jira.
+     *
+     * @var array{description: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string}>}|null
+     */
+    private ?array $issueContent = null;
+
+    /**
      * Show the Jira task number (e.g. PROJ-123) as the page title.
      */
     public function getTitle(): string
     {
         return $this->currentRecord()->jira_key;
     }
-
-    /**
-     * The issue's description and comments, fetched live from Jira.
-     *
-     * @var array{description: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string}>}|null
-     */
-    private ?array $issueContent = null;
 
     /**
      * The rendered description HTML, or null when the issue has none.
@@ -55,6 +55,21 @@ class ViewJiraIssue extends ViewRecord
     }
 
     /**
+     * @return array<int, Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            $this->openInJiraAction(),
+            JiraIssuesTable::updateStatusAssigneeAction(),
+            $this->toggleImportantAction(),
+            $this->snoozeAction(),
+            $this->unsnoozeAction(),
+            $this->dismissAction(),
+        ];
+    }
+
+    /**
      * Fetch (and memoize) the issue's description and comments from Jira so a
      * single API call feeds both the description and comments sections.
      *
@@ -68,7 +83,7 @@ class ViewJiraIssue extends ViewRecord
 
         $user = $this->currentUser();
 
-        if (! $user->hasJiraConnection()) {
+        if (!$user->hasJiraConnection()) {
             return $this->issueContent = ['description' => null, 'comments' => []];
         }
 
@@ -79,21 +94,6 @@ class ViewJiraIssue extends ViewRecord
         } catch (JiraApiException) {
             return $this->issueContent = ['description' => null, 'comments' => []];
         }
-    }
-
-    /**
-     * @return array<int, Action>
-     */
-    protected function getHeaderActions(): array
-    {
-        return [
-            $this->openInJiraAction(),
-            JiraIssuesTable::updateStatusAssigneeAction(),
-            $this->toggleImportantAction(),
-            $this->snoozeAction(),
-            $this->unsnoozeAction(),
-            $this->dismissAction(),
-        ];
     }
 
     /**
@@ -119,7 +119,7 @@ class ViewJiraIssue extends ViewRecord
             ->color(fn (): string => $this->currentRecord()->is_important ? 'warning' : 'gray')
             ->action(function (): void {
                 $record = $this->currentRecord();
-                $record->update(['is_important' => ! $record->is_important]);
+                $record->update(['is_important' => !$record->is_important]);
 
                 Notification::make()->success()->title($record->is_important ? 'Marked important' : 'Unstarred')->send();
             });

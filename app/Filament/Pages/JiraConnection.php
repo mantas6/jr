@@ -23,6 +23,12 @@ use Illuminate\Support\HtmlString;
  */
 class JiraConnection extends Page
 {
+    /**
+     * The current state of the connection form.
+     *
+     * @var array<string, mixed>
+     */
+    public ?array $data = [];
     protected string $view = 'filament.pages.jira-connection';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Link;
@@ -30,13 +36,6 @@ class JiraConnection extends Page
     protected static ?string $navigationLabel = 'Jira connection';
 
     protected static ?int $navigationSort = 20;
-
-    /**
-     * The current state of the connection form.
-     *
-     * @var array<string, mixed>
-     */
-    public ?array $data = [];
 
     public function mount(): void
     {
@@ -76,7 +75,7 @@ class JiraConnection extends Page
                                 ->password()
                                 ->revealable()
                                 ->placeholder($this->hasStoredToken() ? 'Leave blank to keep the current token' : null)
-                                ->required(fn (): bool => ! $this->hasStoredToken())
+                                ->required(fn (): bool => !$this->hasStoredToken())
                                 ->dehydrated(fn (?string $state): bool => filled($state))
                                 ->maxLength(255),
                             TextInput::make('jira_project_key')
@@ -84,7 +83,7 @@ class JiraConnection extends Page
                                 ->placeholder('PROJ')
                                 ->required()
                                 ->alphaDash()
-                                ->dehydrateStateUsing(fn (string $state): string => strtoupper($state))
+                                ->dehydrateStateUsing(fn (string $state): string => mb_strtoupper($state))
                                 ->maxLength(255),
                         ]),
                 ])
@@ -98,21 +97,6 @@ class JiraConnection extends Page
                     ]),
             ])
             ->statePath('data');
-    }
-
-    /**
-     * @return array<Action>
-     */
-    protected function getHeaderActions(): array
-    {
-        return [
-            Action::make('disconnect')
-                ->label('Disconnect')
-                ->color('danger')
-                ->requiresConfirmation()
-                ->visible(fn (): bool => $this->getUser()->hasJiraConnection())
-                ->action(fn () => $this->disconnect()),
-        ];
     }
 
     public function save(): void
@@ -187,11 +171,26 @@ class JiraConnection extends Page
     {
         $user = $this->getUser();
 
-        if (! $user->hasJiraConnection()) {
+        if (!$user->hasJiraConnection()) {
             return 'Not connected';
         }
 
         return 'Connected as '.($user->jira_email).' since '.$user->jira_connected_at?->diffForHumans();
+    }
+
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('disconnect')
+                ->label('Disconnect')
+                ->color('danger')
+                ->requiresConfirmation()
+                ->visible(fn (): bool => $this->getUser()->hasJiraConnection())
+                ->action(fn () => $this->disconnect()),
+        ];
     }
 
     protected function fillFormFromUser(): void

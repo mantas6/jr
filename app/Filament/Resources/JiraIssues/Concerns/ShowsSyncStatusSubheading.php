@@ -16,7 +16,7 @@ trait ShowsSyncStatusSubheading
     {
         $user = $this->syncStatusUser();
 
-        if (! $user->hasJiraConnection()) {
+        if (!$user->hasJiraConnection()) {
             return new HtmlString(
                 'Jira not connected — <a href="'.e(JiraConnection::getUrl()).'" class="fi-link">Connect</a>'
             );

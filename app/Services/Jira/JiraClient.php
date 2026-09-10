@@ -45,10 +45,7 @@ final class JiraClient
      */
     private string|false|null $sprintFieldId = false;
 
-    public function __construct(
-        protected User $user,
-        protected PendingRequest $request,
-    ) {}
+    public function __construct(protected User $user, protected PendingRequest $request) {}
 
     /**
      * Build a client for the given user's stored Jira credentials.

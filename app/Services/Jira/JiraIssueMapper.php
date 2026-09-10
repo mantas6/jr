@@ -63,7 +63,7 @@ class JiraIssueMapper
             'assignee_name' => self::nullableString(data_get($fields, 'assignee.displayName')),
             'reporter_name' => self::nullableString(data_get($fields, 'reporter.displayName')),
             'sprints' => $sprintFieldId !== null ? self::extractSprintNames(data_get($fields, $sprintFieldId)) : null,
-            'jira_url' => rtrim((string) $user->jira_site_url, '/').'/browse/'.$key,
+            'jira_url' => mb_rtrim((string) $user->jira_site_url, '/').'/browse/'.$key,
             'jira_created_at' => self::parseDate(data_get($fields, 'created')),
             'jira_updated_at' => self::parseDate(data_get($fields, 'updated')),
             'raw' => $fields,
@@ -100,7 +100,7 @@ class JiraIssueMapper
      */
     private static function parseDate(mixed $value): ?CarbonInterface
     {
-        if (! is_string($value) || $value === '') {
+        if (!is_string($value) || $value === '') {
             return null;
         }
 
@@ -126,7 +126,7 @@ class JiraIssueMapper
      */
     private static function extractSprintNames(mixed $value): ?array
     {
-        if (! is_array($value)) {
+        if (!is_array($value)) {
             return null;
         }
 

@@ -28,11 +28,11 @@ class JiraAttachmentProxy
      */
     public static function rewriteHtml(string $html, ?string $jiraSiteUrl): string
     {
-        if (trim($html) === '' || ! is_string($jiraSiteUrl) || trim($jiraSiteUrl) === '') {
+        if (mb_trim($html) === '' || !is_string($jiraSiteUrl) || mb_trim($jiraSiteUrl) === '') {
             return $html;
         }
 
-        $siteUrl = rtrim($jiraSiteUrl, '/');
+        $siteUrl = mb_rtrim($jiraSiteUrl, '/');
 
         return (string) preg_replace_callback(
             '/\b(src|href)=(["\'])(.*?)\2/i',
@@ -56,7 +56,7 @@ class JiraAttachmentProxy
      */
     public static function isAllowedPath(string $path): bool
     {
-        if (! str_starts_with($path, '/')) {
+        if (!str_starts_with($path, '/')) {
             return false;
         }
 
@@ -78,7 +78,7 @@ class JiraAttachmentProxy
         $url = html_entity_decode($url, ENT_QUOTES | ENT_HTML5);
 
         if (str_starts_with($url, $siteUrl)) {
-            $path = substr($url, strlen($siteUrl));
+            $path = mb_substr($url, mb_strlen($siteUrl));
         } elseif (str_starts_with($url, '/')) {
             $path = $url;
         } else {

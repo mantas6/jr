@@ -57,7 +57,7 @@ test('searchIssues omits nextPageToken when null', function () {
 
     JiraClient::forUser(jiraUser())->searchIssues('project = "PROJ"');
 
-    Http::assertSent(fn (Request $request) => ! isset($request['nextPageToken']));
+    Http::assertSent(fn (Request $request) => !isset($request['nextPageToken']));
 });
 
 test('searchIssues appends extra fields to the requested field list', function () {

@@ -69,27 +69,6 @@ class JiraIssue extends Model
     use HasFactory;
 
     /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
-    {
-        return [
-            'sprints' => 'array',
-            'is_important' => 'boolean',
-            'snoozed_until' => 'datetime',
-            'dismissed_at' => 'datetime',
-            'mentions_me' => 'boolean',
-            'mentions_scanned_at' => 'datetime',
-            'raw' => 'array',
-            'jira_created_at' => 'datetime',
-            'jira_updated_at' => 'datetime',
-            'last_synced_at' => 'datetime',
-        ];
-    }
-
-    /**
      * The user that owns the Jira issue.
      *
      * @return BelongsTo<User, $this>
@@ -131,5 +110,26 @@ class JiraIssue extends Model
                         });
                     });
             });
+    }
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'sprints' => 'array',
+            'is_important' => 'boolean',
+            'snoozed_until' => 'datetime',
+            'dismissed_at' => 'datetime',
+            'mentions_me' => 'boolean',
+            'mentions_scanned_at' => 'datetime',
+            'raw' => 'array',
+            'jira_created_at' => 'datetime',
+            'jira_updated_at' => 'datetime',
+            'last_synced_at' => 'datetime',
+        ];
     }
 }

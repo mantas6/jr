@@ -28,19 +28,6 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
     use Queueable;
 
     /**
-     * The number of times the job may be attempted.
-     *
-     * Allows a few overlap-release retries when a forced run queues behind a
-     * scheduled sync that is still in flight.
-     */
-    public int $tries = 5;
-
-    /**
-     * The number of seconds the job may run before timing out.
-     */
-    public int $timeout = 300;
-
-    /**
      * The columns updated when an existing issue row is matched during upsert.
      *
      * @var list<string>
@@ -63,6 +50,19 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         'raw',
         'last_synced_at',
     ];
+
+    /**
+     * The number of times the job may be attempted.
+     *
+     * Allows a few overlap-release retries when a forced run queues behind a
+     * scheduled sync that is still in flight.
+     */
+    public int $tries = 5;
+
+    /**
+     * The number of seconds the job may run before timing out.
+     */
+    public int $timeout = 300;
 
     /**
      * Create a new job instance.
@@ -107,7 +107,7 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
      */
     public function handle(): void
     {
-        if (! $this->user->hasJiraConnection()) {
+        if (!$this->user->hasJiraConnection()) {
             return;
         }
 
@@ -116,6 +116,16 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         } catch (Throwable $exception) {
             $this->fail($exception);
         }
+    }
+
+    /**
+     * Record the failure message on the user when the job ultimately fails.
+     */
+    public function failed(?Throwable $exception): void
+    {
+        $this->user->forceFill([
+            'jira_last_sync_error' => $exception?->getMessage(),
+        ])->save();
     }
 
     /**
@@ -158,7 +168,7 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
 
             $nextPageToken = $page['nextPageToken'] ?? null;
             $isLast = $page['isLast'] ?? ($nextPageToken === null);
-        } while (! $isLast && $nextPageToken !== null);
+        } while (!$isLast && $nextPageToken !== null);
 
         $this->warmTransitionsCache($client, $representatives);
 
@@ -248,15 +258,5 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
 
             JiraTransitionsCache::put($this->user, $issueType, $statusId, $transitions);
         }
-    }
-
-    /**
-     * Record the failure message on the user when the job ultimately fails.
-     */
-    public function failed(?Throwable $exception): void
-    {
-        $this->user->forceFill([
-            'jira_last_sync_error' => $exception?->getMessage(),
-        ])->save();
     }
 }

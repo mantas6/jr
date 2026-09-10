@@ -43,7 +43,7 @@ class JiraIssueContentMapper
         $rawComments = data_get($payload, 'fields.comment.comments');
         $renderedComments = data_get($payload, 'renderedFields.comment.comments');
 
-        if (! is_array($rawComments)) {
+        if (!is_array($rawComments)) {
             return [];
         }
 
@@ -52,7 +52,7 @@ class JiraIssueContentMapper
         $comments = [];
 
         foreach (array_values($rawComments) as $index => $comment) {
-            if (! is_array($comment)) {
+            if (!is_array($comment)) {
                 continue;
             }
 
@@ -74,7 +74,7 @@ class JiraIssueContentMapper
      */
     private static function nullableHtml(mixed $value, ?string $jiraSiteUrl = null): ?string
     {
-        if (! is_string($value) || trim($value) === '') {
+        if (!is_string($value) || mb_trim($value) === '') {
             return null;
         }
 
@@ -86,7 +86,7 @@ class JiraIssueContentMapper
      */
     private static function parseDate(mixed $value): ?CarbonInterface
     {
-        if (! is_string($value) || $value === '') {
+        if (!is_string($value) || $value === '') {
             return null;
         }
 

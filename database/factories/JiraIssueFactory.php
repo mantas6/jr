@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\JiraIssue;
 use App\Models\User;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -70,7 +71,7 @@ class JiraIssueFactory extends Factory
     /**
      * Snooze the issue until the given time (defaults to one hour from now).
      */
-    public function snoozed(?\DateTimeInterface $until = null): static
+    public function snoozed(?DateTimeInterface $until = null): static
     {
         return $this->state(fn (array $attributes): array => [
             'snoozed_until' => $until ?? now()->addHour(),
@@ -80,7 +81,7 @@ class JiraIssueFactory extends Factory
     /**
      * Mark the issue as dismissed at the given time (defaults to now).
      */
-    public function dismissed(?\DateTimeInterface $at = null): static
+    public function dismissed(?DateTimeInterface $at = null): static
     {
         return $this->state(fn (array $attributes): array => [
             'dismissed_at' => $at ?? now(),

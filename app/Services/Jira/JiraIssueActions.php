@@ -15,10 +15,7 @@ use Illuminate\Support\Carbon;
  */
 final class JiraIssueActions
 {
-    public function __construct(
-        private User $user,
-        private JiraClient $client,
-    ) {}
+    public function __construct(private User $user, private JiraClient $client) {}
 
     /**
      * Build the actions helper from the given user's stored credentials.

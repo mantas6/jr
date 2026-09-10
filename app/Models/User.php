@@ -55,23 +55,6 @@ class User extends Authenticatable implements FilamentUser
     use HasFactory, Notifiable;
 
     /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
-    {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'jira_api_token' => 'encrypted',
-            'jira_connected_at' => 'datetime',
-            'jira_last_synced_at' => 'datetime',
-            'jira_last_full_synced_at' => 'datetime',
-        ];
-    }
-
-    /**
      * The Jira issues synced for this user.
      *
      * @return HasMany<JiraIssue, $this>
@@ -111,5 +94,22 @@ class User extends Authenticatable implements FilamentUser
         return Str::length($initials) > 1
             ? Str::substr($initials, 0, 1).Str::substr($initials, -1)
             : $initials;
+    }
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+            'jira_api_token' => 'encrypted',
+            'jira_connected_at' => 'datetime',
+            'jira_last_synced_at' => 'datetime',
+            'jira_last_full_synced_at' => 'datetime',
+        ];
     }
 }

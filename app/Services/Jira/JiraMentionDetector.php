@@ -14,7 +14,7 @@ class JiraMentionDetector
      */
     public static function mentions(mixed $node, string $accountId): bool
     {
-        if ($accountId === '' || ! is_array($node)) {
+        if ($accountId === '' || !is_array($node)) {
             return false;
         }
 

@@ -26,6 +26,13 @@ class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
     use Queueable;
 
     /**
+     * The Jira issue fields required to detect mentions.
+     *
+     * @var list<string>
+     */
+    private const MENTION_FIELDS = ['description', 'comment'];
+
+    /**
      * The number of times the job may be attempted.
      */
     public int $tries = 1;
@@ -34,13 +41,6 @@ class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
      * The number of seconds the job may run before timing out.
      */
     public int $timeout = 300;
-
-    /**
-     * The Jira issue fields required to detect mentions.
-     *
-     * @var list<string>
-     */
-    private const MENTION_FIELDS = ['description', 'comment'];
 
     /**
      * Create a new job instance.
@@ -72,7 +72,7 @@ class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
     {
         $accountId = (string) $this->user->jira_account_id;
 
-        if (! $this->user->hasJiraConnection() || $accountId === '') {
+        if (!$this->user->hasJiraConnection() || $accountId === '') {
             return;
         }
 
@@ -91,7 +91,7 @@ class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
 
             $nextPageToken = $page['nextPageToken'] ?? null;
             $isLast = $page['isLast'] ?? ($nextPageToken === null);
-        } while (! $isLast && $nextPageToken !== null);
+        } while (!$isLast && $nextPageToken !== null);
     }
 
     /**

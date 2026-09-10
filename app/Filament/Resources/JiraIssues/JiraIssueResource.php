@@ -107,7 +107,7 @@ class JiraIssueResource extends Resource
     {
         $user = auth()->user();
 
-        if (! $user instanceof User) {
+        if (!$user instanceof User) {
             return 0;
         }
 

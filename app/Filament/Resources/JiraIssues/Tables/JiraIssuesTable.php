@@ -119,7 +119,7 @@ class JiraIssuesTable
                 Action::make('sync')
                     ->label('Sync from Jira')
                     ->icon(Heroicon::ArrowPath)
-                    ->disabled(fn (): bool => ! self::user()->hasJiraConnection())
+                    ->disabled(fn (): bool => !self::user()->hasJiraConnection())
                     ->tooltip(fn (): ?string => self::user()->hasJiraConnection() ? null : 'Connect Jira first')
                     ->action(function (): void {
                         SyncJiraIssuesJob::dispatch(self::user());
@@ -132,7 +132,7 @@ class JiraIssuesTable
                 Action::make('forceSync')
                     ->label('Full resync')
                     ->icon(Heroicon::ArrowPathRoundedSquare)
-                    ->disabled(fn (): bool => ! self::user()->hasJiraConnection())
+                    ->disabled(fn (): bool => !self::user()->hasJiraConnection())
                     ->tooltip(fn (): ?string => self::user()->hasJiraConnection() ? null : 'Connect Jira first')
                     ->action(function (): void {
                         SyncJiraIssuesJob::dispatch(self::user(), force: true);
@@ -146,22 +146,9 @@ class JiraIssuesTable
             ->poll('30s');
     }
 
-    /**
-     * Escape the summary and wrap any bracketed segments (e.g. `[API]`) in bold,
-     * keeping the brackets themselves.
-     */
-    private static function boldBracketedText(?string $summary): string
-    {
-        return preg_replace_callback(
-            '/\[[^\]]*\]/',
-            static fn (array $matches): string => '<strong>'.$matches[0].'</strong>',
-            e((string) $summary),
-        ) ?? e((string) $summary);
-    }
-
     public static function issueTypeColor(?string $issueType): string
     {
-        $issueType = strtolower((string) $issueType);
+        $issueType = mb_strtolower((string) $issueType);
 
         $keywordColors = [
             'sub' => 'gray',
@@ -243,6 +230,19 @@ class JiraIssuesTable
     }
 
     /**
+     * Escape the summary and wrap any bracketed segments (e.g. `[API]`) in bold,
+     * keeping the brackets themselves.
+     */
+    private static function boldBracketedText(?string $summary): string
+    {
+        return preg_replace_callback(
+            '/\[[^\]]*\]/',
+            static fn (array $matches): string => '<strong>'.$matches[0].'</strong>',
+            e((string) $summary),
+        ) ?? e((string) $summary);
+    }
+
+    /**
      * The current status plus any reachable transition targets from cache.
      *
      * @return array<string, string>
@@ -253,7 +253,7 @@ class JiraIssuesTable
 
         $user = self::user();
 
-        if (! $user->hasJiraConnection()) {
+        if (!$user->hasJiraConnection()) {
             return $options;
         }
 
@@ -306,7 +306,7 @@ class JiraIssuesTable
     {
         $user = self::user();
 
-        if (! $user->hasJiraConnection() || blank($search)) {
+        if (!$user->hasJiraConnection() || blank($search)) {
             return [];
         }
 
@@ -380,7 +380,7 @@ class JiraIssuesTable
             ->icon(fn (JiraIssue $record): Heroicon => $record->is_important ? Heroicon::Star : Heroicon::OutlinedStar)
             ->color(fn (JiraIssue $record): string => $record->is_important ? 'warning' : 'gray')
             ->iconButton()
-            ->action(fn (JiraIssue $record) => $record->update(['is_important' => ! $record->is_important]));
+            ->action(fn (JiraIssue $record) => $record->update(['is_important' => !$record->is_important]));
     }
 
     /**
