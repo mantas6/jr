@@ -445,6 +445,26 @@ test('the view page renders all task data for the owner', function () {
         ->assertSee('Detailed task summary')
         ->assertSee('Rita Reporter')
         ->assertSee('Sprint Alpha');
+
+    // The Jira description/comments are deferred, so nothing is fetched on mount.
+    Http::assertNothingSent();
+});
+
+test('the view page paints without blocking on the deferred jira content', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake(['*' => Http::response(['renderedFields' => [], 'fields' => []])]);
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertOk();
+
+    Http::assertNothingSent();
 });
 
 test('the view page renders the live description and comments from jira', function () {
@@ -477,11 +497,20 @@ test('the view page renders the live description and comments from jira', functi
         ]),
     ]);
 
-    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->assertOk()
-        ->assertSeeHtml('<p>The rendered description.</p>')
-        ->assertSee('Carol Commenter')
-        ->assertSeeHtml('<p>The first comment.</p>');
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    // The description and comments render in the deferred schema's partial.
+    $partial = $component->effects['partials']['schema.infolist.jiraContent'];
+
+    expect($partial)
+        ->toContain('<p>The rendered description.</p>')
+        ->toContain('Carol Commenter')
+        ->toContain('<p>The first comment.</p>');
+
+    // Both sections share a single deferred request, so Jira is hit exactly once.
+    Http::assertSentCount(1);
 });
 
 test('the view page loads without a jira connection and shows content placeholders', function () {
@@ -495,10 +524,15 @@ test('the view page loads without a jira connection and shows content placeholde
 
     Http::fake();
 
-    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->assertOk()
-        ->assertSee('No description')
-        ->assertSee('No comments');
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    $partial = $component->effects['partials']['schema.infolist.jiraContent'];
+
+    expect($partial)
+        ->toContain('No description')
+        ->toContain('No comments');
 
     Http::assertNothingSent();
 });

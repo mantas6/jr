@@ -7,6 +7,7 @@ use App\Filament\Resources\JiraIssues\Tables\JiraIssuesTable;
 use App\Models\JiraIssue;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
@@ -64,38 +65,49 @@ class JiraIssueInfolist
                             ->dateTime()
                             ->placeholder('—'),
                     ]),
-                Section::make('Description')
-                    ->schema([
-                        TextEntry::make('description')
-                            ->hiddenLabel()
-                            ->state(fn (ViewJiraIssue $livewire): ?string => $livewire->descriptionHtml())
-                            ->html()
-                            ->prose()
-                            ->placeholder('No description')
-                            ->columnSpanFull(),
-                    ]),
-                Section::make('Comments')
-                    ->schema([
-                        RepeatableEntry::make('comments')
-                            ->hiddenLabel()
-                            ->state(fn (ViewJiraIssue $livewire): array => $livewire->comments())
-                            ->placeholder('No comments')
-                            ->schema([
-                                TextEntry::make('author')
-                                    ->label('Author')
-                                    ->weight('bold'),
-                                TextEntry::make('created')
-                                    ->label('Posted')
-                                    ->dateTime()
-                                    ->placeholder('—'),
-                                TextEntry::make('body')
-                                    ->hiddenLabel()
-                                    ->html()
-                                    ->prose()
-                                    ->columnSpanFull(),
+                Group::make()
+                    ->key('jiraContent')
+                    ->columnSpanFull()
+                    ->schema(
+                        Schema::make()
+                            ->components([
+                                Section::make('Description')
+                                    ->columnSpanFull()
+                                    ->schema([
+                                        TextEntry::make('description')
+                                            ->hiddenLabel()
+                                            ->state(fn (ViewJiraIssue $livewire): ?string => $livewire->descriptionHtml())
+                                            ->html()
+                                            ->prose()
+                                            ->placeholder('No description')
+                                            ->columnSpanFull(),
+                                    ]),
+                                Section::make('Comments')
+                                    ->columnSpanFull()
+                                    ->schema([
+                                        RepeatableEntry::make('comments')
+                                            ->hiddenLabel()
+                                            ->state(fn (ViewJiraIssue $livewire): array => $livewire->comments())
+                                            ->placeholder('No comments')
+                                            ->schema([
+                                                TextEntry::make('author')
+                                                    ->label('Author')
+                                                    ->weight('bold'),
+                                                TextEntry::make('created')
+                                                    ->label('Posted')
+                                                    ->dateTime()
+                                                    ->placeholder('—'),
+                                                TextEntry::make('body')
+                                                    ->hiddenLabel()
+                                                    ->html()
+                                                    ->prose()
+                                                    ->columnSpanFull(),
+                                            ])
+                                            ->columns(2),
+                                    ]),
                             ])
-                            ->columns(2),
-                    ]),
+                            ->deferLoading(),
+                    ),
             ]);
     }
 
