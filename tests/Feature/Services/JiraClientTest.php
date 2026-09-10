@@ -144,6 +144,25 @@ test('searchAssignableUsers sends project and query params', function () {
     });
 });
 
+test('getIssueContent requests description and comments with rendered fields', function () {
+    $body = [
+        'renderedFields' => ['description' => '<p>Hello</p>'],
+        'fields' => ['comment' => ['comments' => []]],
+    ];
+
+    Http::fake(['*' => Http::response($body)]);
+
+    $result = JiraClient::forUser(jiraUser())->getIssueContent('PROJ-1');
+
+    expect($result)->toBe($body);
+
+    Http::assertSent(function (Request $request) {
+        return str_starts_with($request->url(), 'https://example.atlassian.net/rest/api/3/issue/PROJ-1')
+            && $request['fields'] === 'description,comment'
+            && $request['expand'] === 'renderedFields';
+    });
+});
+
 test('getTransitions returns the transitions array', function () {
     Http::fake(['*' => Http::response(['transitions' => [['id' => '11', 'name' => 'Done']]])]);
 

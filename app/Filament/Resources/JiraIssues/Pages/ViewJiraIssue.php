@@ -8,7 +8,9 @@ use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraIssueActions;
+use App\Services\Jira\JiraIssueContentMapper;
 use App\Services\Jira\JiraTransitionsCache;
+use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
@@ -19,6 +21,58 @@ use Illuminate\Support\Facades\Cache;
 class ViewJiraIssue extends ViewRecord
 {
     protected static string $resource = JiraIssueResource::class;
+
+    /**
+     * The issue's description and comments, fetched live from Jira.
+     *
+     * @var array{description: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string}>}|null
+     */
+    private ?array $issueContent = null;
+
+    /**
+     * The rendered description HTML, or null when the issue has none.
+     */
+    public function descriptionHtml(): ?string
+    {
+        return $this->issueContent()['description'];
+    }
+
+    /**
+     * The issue's comments, ordered oldest to newest.
+     *
+     * @return list<array{author: string, created: CarbonInterface|null, body: string}>
+     */
+    public function comments(): array
+    {
+        return $this->issueContent()['comments'];
+    }
+
+    /**
+     * Fetch (and memoize) the issue's description and comments from Jira so a
+     * single API call feeds both the description and comments sections.
+     *
+     * @return array{description: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string}>}
+     */
+    private function issueContent(): array
+    {
+        if ($this->issueContent !== null) {
+            return $this->issueContent;
+        }
+
+        $user = $this->currentUser();
+
+        if (! $user->hasJiraConnection()) {
+            return $this->issueContent = ['description' => null, 'comments' => []];
+        }
+
+        try {
+            $payload = JiraClient::forUser($user)->getIssueContent($this->currentRecord()->jira_key);
+
+            return $this->issueContent = JiraIssueContentMapper::map($payload);
+        } catch (JiraApiException) {
+            return $this->issueContent = ['description' => null, 'comments' => []];
+        }
+    }
 
     /**
      * @return array<int, Action>

@@ -137,6 +137,22 @@ final class JiraClient
     }
 
     /**
+     * Fetch an issue's description and comments, including Jira's rendered HTML.
+     *
+     * @return array<string, mixed>
+     */
+    public function getIssueContent(string $key): array
+    {
+        return $this->send(fn (PendingRequest $request): Response => $request->get(
+            "/rest/api/3/issue/{$key}",
+            [
+                'fields' => 'description,comment',
+                'expand' => 'renderedFields',
+            ],
+        ))->json();
+    }
+
+    /**
      * Fetch the available transitions for an issue.
      *
      * @return list<array<string, mixed>>

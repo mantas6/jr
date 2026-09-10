@@ -438,13 +438,67 @@ test('the view page renders all task data for the owner', function () {
         'sprints' => ['Sprint Alpha'],
     ]);
 
-    Http::fake();
+    Http::fake(['*' => Http::response(['renderedFields' => [], 'fields' => []])]);
 
     livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->assertOk()
         ->assertSee('Detailed task summary')
         ->assertSee('Rita Reporter')
         ->assertSee('Sprint Alpha');
+});
+
+test('the view page renders the live description and comments from jira', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-70',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-70*' => Http::response([
+            'renderedFields' => [
+                'description' => '<p>The rendered description.</p>',
+                'comment' => [
+                    'comments' => [
+                        ['body' => '<p>The first comment.</p>'],
+                    ],
+                ],
+            ],
+            'fields' => [
+                'comment' => [
+                    'comments' => [
+                        ['author' => ['displayName' => 'Carol Commenter'], 'created' => '2024-03-01T08:00:00.000+0000'],
+                    ],
+                ],
+            ],
+        ]),
+    ]);
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertOk()
+        ->assertSeeHtml('<p>The rendered description.</p>')
+        ->assertSee('Carol Commenter')
+        ->assertSeeHtml('<p>The first comment.</p>');
+});
+
+test('the view page loads without a jira connection and shows content placeholders', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertOk()
+        ->assertSee('No description')
+        ->assertSee('No comments');
 
     Http::assertNothingSent();
 });
