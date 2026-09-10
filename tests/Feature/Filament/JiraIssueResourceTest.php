@@ -221,6 +221,101 @@ test('searching assignees hits the assignable endpoint with the typed query', fu
     });
 });
 
+test('changing the assignee assigns the issue in jira and refreshes the row', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-30',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'assignee_account_id' => null,
+        'assignee_name' => null,
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', []);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-30/assignee' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-30*' => Http::response(resourceIssuePayload('PROJ-30', [
+            'assignee' => ['accountId' => 'acc-9', 'displayName' => 'Assignee Nine'],
+        ])),
+    ]);
+
+    livewire(ListJiraIssues::class)
+        ->call('updateTableColumnState', 'assignee_account_id', (string) $issue->getKey(), 'acc-9');
+
+    expect($issue->fresh()->assignee_account_id)->toBe('acc-9')
+        ->and($issue->fresh()->assignee_name)->toBe('Assignee Nine');
+
+    Http::assertSent(function ($request) {
+        return str_contains($request->url(), '/rest/api/3/issue/PROJ-30/assignee')
+            && $request->method() === 'PUT'
+            && $request['accountId'] === 'acc-9';
+    });
+});
+
+test('selecting Unassigned clears the assignee in jira and locally', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-31',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'assignee_account_id' => 'acc-old',
+        'assignee_name' => 'Old Assignee',
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', []);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-31/assignee' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-31*' => Http::response(resourceIssuePayload('PROJ-31', [
+            'assignee' => null,
+        ])),
+    ]);
+
+    livewire(ListJiraIssues::class)
+        ->call('updateTableColumnState', 'assignee_account_id', (string) $issue->getKey(), null);
+
+    expect($issue->fresh()->assignee_account_id)->toBeNull()
+        ->and($issue->fresh()->assignee_name)->toBeNull();
+
+    Http::assertSent(function ($request) {
+        return str_contains($request->url(), '/rest/api/3/issue/PROJ-31/assignee')
+            && $request->method() === 'PUT'
+            && array_key_exists('accountId', $request->data())
+            && $request['accountId'] === null;
+    });
+});
+
+test('a rejected assignee change returns an inline error and leaves the row unchanged', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-32',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'assignee_account_id' => 'acc-old',
+        'assignee_name' => 'Old Assignee',
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', []);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-32/assignee' => Http::response(['errorMessages' => ['Nope']], 400),
+    ]);
+
+    livewire(ListJiraIssues::class)
+        ->call('updateTableColumnState', 'assignee_account_id', (string) $issue->getKey(), 'acc-new')
+        ->assertReturned(fn (mixed $result): bool => is_array($result) && isset($result['error']));
+
+    expect($issue->fresh()->assignee_account_id)->toBe('acc-old')
+        ->and($issue->fresh()->assignee_name)->toBe('Old Assignee');
+});
+
 test('the status line prompts to connect when jira is not connected', function () {
     Http::fake();
 
