@@ -52,6 +52,7 @@ test('it pages through search results and upserts every issue', function () {
     $user = syncUser();
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/search/jql*' => Http::sequence()
             ->push([
                 'issues' => [
@@ -146,6 +147,7 @@ test('re-running the sync updates existing rows without duplicating them', funct
     $user = syncUser();
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/search/jql*' => Http::sequence()
             ->push([
                 'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'Original summary')],
@@ -172,6 +174,7 @@ test('a successful sync stamps the synced time and clears any previous error', f
     $user = syncUser(['jira_last_sync_error' => 'previous failure']);
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/search/jql*' => Http::response([
             'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'First issue')],
             'isLast' => true,
@@ -191,6 +194,7 @@ test('it warms the transitions cache for each synced issue type and status', fun
     $user = syncUser();
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/search/jql*' => Http::response([
             'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'First issue', 'Task', '1')],
             'isLast' => true,
@@ -218,6 +222,7 @@ test('a failing transitions call does not abort the sync', function () {
     $user = syncUser();
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/search/jql*' => Http::response([
             'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'First issue')],
             'isLast' => true,
@@ -235,6 +240,7 @@ test('a 401 from search throws and failed() records the error message', function
     $user = syncUser();
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/search/jql*' => Http::response(['errorMessages' => ['nope']], 401),
     ]);
 
