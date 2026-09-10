@@ -93,6 +93,22 @@ test('mapForUpsert json-encodes raw and formats timestamps as strings', function
         ->and($row['last_synced_at'])->toBe('2024-05-01 09:00:00');
 });
 
+test('parseDate normalizes non-UTC Jira timestamps to the app timezone', function () {
+    config()->set('app.timezone', 'UTC');
+
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 5;
+
+    $payload = fullJiraPayload();
+    $payload['fields']['created'] = '2026-09-10T10:00:00.000+0300';
+    $payload['fields']['updated'] = '2026-09-10T12:14:21.653+0300';
+
+    $row = JiraIssueMapper::mapForUpsert($payload, $user, Carbon::parse('2026-09-10 09:30:00'));
+
+    expect($row['jira_created_at'])->toBe('2026-09-10 07:00:00')
+        ->and($row['jira_updated_at'])->toBe('2026-09-10 09:14:21');
+});
+
 test('sprints is null when no sprint field id is given', function () {
     $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
     $user->id = 1;

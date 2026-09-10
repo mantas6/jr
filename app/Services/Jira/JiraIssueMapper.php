@@ -104,7 +104,7 @@ class JiraIssueMapper
             return null;
         }
 
-        return Carbon::parse($value);
+        return Carbon::parse($value)->setTimezone(config('app.timezone'));
     }
 
     /**
