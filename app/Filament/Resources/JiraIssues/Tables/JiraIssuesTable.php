@@ -41,13 +41,14 @@ class JiraIssuesTable
                 TextColumn::make('priority'),
                 TextColumn::make('jira_updated_at')
                     ->label('Jira updated')
-                    ->since()
+                    ->formatStateUsing(fn (JiraIssue $record): ?string => $record->jira_updated_at?->diffForHumans(short: true))
                     ->sortable(),
                 TextColumn::make('last_synced_at')
                     ->label('Last synced')
-                    ->since()
+                    ->formatStateUsing(fn (JiraIssue $record): ?string => $record->last_synced_at?->diffForHumans(short: true))
                     ->color(fn (JiraIssue $record): ?string => self::isStale($record) ? 'warning' : null)
-                    ->description(fn (JiraIssue $record): ?string => self::isStale($record) ? 'Stale' : null),
+                    ->description(fn (JiraIssue $record): ?string => self::isStale($record) ? 'Stale' : null)
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('status')
