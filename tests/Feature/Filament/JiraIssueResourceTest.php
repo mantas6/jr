@@ -140,6 +140,41 @@ test('changing the status transitions the issue and refreshes the row', function
         ->and($issue->fresh()->status)->toBe('In Progress');
 });
 
+test('a status change trusts the transition target when jira re-fetch is still stale', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-22',
+        'issue_type' => 'Task',
+        'status' => 'To Do',
+        'status_id' => '1',
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', [
+        ['id' => '31', 'to_id' => '2', 'to_name' => 'In Progress'],
+    ]);
+
+    // The transition succeeds, but the immediate re-fetch still reports the old
+    // status because Jira's workflow post-functions have not completed yet.
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-22/transitions' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-22*' => Http::response(resourceIssuePayload('PROJ-22', [
+            'status' => [
+                'id' => '1',
+                'name' => 'To Do',
+                'statusCategory' => ['name' => 'To Do'],
+            ],
+        ])),
+    ]);
+
+    livewire(ListJiraIssues::class)
+        ->call('updateTableColumnState', 'status_id', (string) $issue->getKey(), '2');
+
+    expect($issue->fresh()->status_id)->toBe('2')
+        ->and($issue->fresh()->status)->toBe('In Progress');
+});
+
 test('a rejected status change leaves the row unchanged', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);

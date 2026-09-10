@@ -55,7 +55,19 @@ final class JiraIssueActions
 
         $this->client->transitionIssue($issue->jira_key, $transition['id']);
 
-        return $this->refresh($issue);
+        $issue = $this->refresh($issue);
+
+        // Jira runs workflow post-functions asynchronously, so an immediate
+        // re-fetch can still report the previous status. Trust the transition's
+        // known destination so the UI does not revert to the old status.
+        if ($issue->status_id !== $transition['to_id']) {
+            $issue->forceFill([
+                'status_id' => $transition['to_id'],
+                'status' => $transition['to_name'],
+            ])->save();
+        }
+
+        return $issue;
     }
 
     /**
