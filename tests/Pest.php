@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Features\SupportTesting\Testable;
 use Tests\TestCase;
 
 /*
@@ -47,7 +48,16 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * Boot a Livewire component test.
+ *
+ * pest-plugin-livewire is not installed, so this wraps `Livewire::test()`
+ * to give feature tests a concise, shared entry point.
+ *
+ * @param  class-string  $name
+ * @param  array<string, mixed>  $params
+ */
+function livewire(string $name, array $params = []): Testable
 {
-    // ..
+    return Livewire\Livewire::test($name, $params);
 }

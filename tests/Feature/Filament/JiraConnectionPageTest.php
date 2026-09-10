@@ -5,12 +5,6 @@ use App\Models\User;
 use Filament\Auth\Pages\Register;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Livewire\Livewire;
-
-function livewire(string $name, array $params = [])
-{
-    return Livewire::test($name, $params);
-}
 
 test('guests are redirected to login', function () {
     $this->get(JiraConnection::getUrl())
