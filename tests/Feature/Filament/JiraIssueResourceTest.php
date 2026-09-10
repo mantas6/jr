@@ -531,8 +531,8 @@ test('changing status from the view page transitions the issue in jira', functio
     ]);
 
     livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
-        ->callAction('changeStatus', ['status_id' => '2'])
-        ->assertNotified('Status updated');
+        ->callAction('updateStatusAssignee', ['status_id' => '2'])
+        ->assertNotified('Task updated');
 
     expect($issue->fresh()->status_id)->toBe('2')
         ->and($issue->fresh()->status)->toBe('In Progress');
@@ -554,6 +554,8 @@ test('reassigning from the view page assigns the issue in jira', function () {
         'assignee_name' => null,
     ]);
 
+    JiraTransitionsCache::put($user, 'Task', '1', []);
+
     Http::fake([
         '*/rest/api/3/issue/PROJ-51/assignee' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-51*' => Http::response(resourceIssuePayload('PROJ-51', [
@@ -562,8 +564,8 @@ test('reassigning from the view page assigns the issue in jira', function () {
     ]);
 
     livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
-        ->callAction('reassign', ['assignee_account_id' => 'acc-me'])
-        ->assertNotified('Assignee updated');
+        ->callAction('updateStatusAssignee', ['status_id' => '1', 'assignee_account_id' => 'acc-me'])
+        ->assertNotified('Task updated');
 
     expect($issue->fresh()->assignee_account_id)->toBe('acc-me')
         ->and($issue->fresh()->assignee_name)->toBe('Me McGee');
@@ -578,8 +580,7 @@ test('the view page edit actions are hidden without a jira connection', function
     Http::fake();
 
     livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
-        ->assertActionHidden('changeStatus')
-        ->assertActionHidden('reassign');
+        ->assertActionHidden('updateStatusAssignee');
 });
 
 test('the view page can toggle the important flag without a jira connection', function () {

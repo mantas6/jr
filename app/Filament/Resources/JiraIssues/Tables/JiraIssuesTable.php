@@ -104,7 +104,7 @@ class JiraIssuesTable
             ->recordUrl(fn (JiraIssue $record): string => JiraIssueResource::getUrl('view', ['record' => $record]))
             ->defaultSort('jira_updated_at', 'desc')
             ->recordActions([
-                self::updateStatusAssigneeAction(),
+                self::updateStatusAssigneeAction()->iconButton(),
                 self::starAction(),
                 self::snoozeAction(),
                 self::unsnoozeAction(),
@@ -171,15 +171,15 @@ class JiraIssuesTable
 
     /**
      * Modal action to change the status and/or assignee in one step, with an
-     * optional dismiss toggle that clears the task once the update lands.
+     * optional dismiss toggle that clears the task once the update lands. Shared
+     * by the task lists (as an icon button) and the single-task view page.
      */
-    private static function updateStatusAssigneeAction(): Action
+    public static function updateStatusAssigneeAction(): Action
     {
         return Action::make('updateStatusAssignee')
             ->label('Update status / assignee')
             ->icon(Heroicon::ArrowRight)
             ->color('gray')
-            ->iconButton()
             ->visible(fn (): bool => self::user()->hasJiraConnection())
             ->schema([
                 Select::make('status_id')
