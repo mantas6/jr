@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +25,20 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        $this->registerDevProcesses();
+    }
+
+    /**
+     * Register additional processes run by `php artisan dev` (and `composer run dev`).
+     *
+     * The framework's default dev processes do not include the scheduler, so the
+     * every-15-minute Jira sync would never fire locally. Registering `schedule:work`
+     * here keeps the schedule running alongside the server, queue and Vite processes.
+     */
+    protected function registerDevProcesses(): void
+    {
+        DevCommands::artisan('schedule:work', 'schedule');
     }
 
     /**
