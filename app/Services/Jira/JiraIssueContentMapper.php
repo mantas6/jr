@@ -13,17 +13,21 @@ class JiraIssueContentMapper
      * Map a Jira issue content payload (fetched with `expand=renderedFields`)
      * into the description HTML and a normalized list of comments.
      *
+     * When a Jira site URL is given, inline attachment URLs in the rendered
+     * HTML are rewritten to load through the authenticated local proxy so
+     * embedded images render in the browser.
+     *
      * @param  array<string, mixed>  $payload
      * @return array{
      *     description: string|null,
      *     comments: list<array{author: string, created: CarbonInterface|null, body: string}>,
      * }
      */
-    public static function map(array $payload): array
+    public static function map(array $payload, ?string $jiraSiteUrl = null): array
     {
         return [
-            'description' => self::nullableHtml(data_get($payload, 'renderedFields.description')),
-            'comments' => self::mapComments($payload),
+            'description' => self::nullableHtml(data_get($payload, 'renderedFields.description'), $jiraSiteUrl),
+            'comments' => self::mapComments($payload, $jiraSiteUrl),
         ];
     }
 
@@ -33,7 +37,7 @@ class JiraIssueContentMapper
      * @param  array<string, mixed>  $payload
      * @return list<array{author: string, created: CarbonInterface|null, body: string}>
      */
-    private static function mapComments(array $payload): array
+    private static function mapComments(array $payload, ?string $jiraSiteUrl = null): array
     {
         $rawComments = data_get($payload, 'fields.comment.comments');
         $renderedComments = data_get($payload, 'renderedFields.comment.comments');
@@ -54,7 +58,10 @@ class JiraIssueContentMapper
             $comments[] = [
                 'author' => (string) data_get($comment, 'author.displayName', 'Unknown'),
                 'created' => self::parseDate(data_get($comment, 'created')),
-                'body' => (string) data_get($rendered[$index] ?? [], 'body', ''),
+                'body' => JiraAttachmentProxy::rewriteHtml(
+                    (string) data_get($rendered[$index] ?? [], 'body', ''),
+                    $jiraSiteUrl,
+                ),
             ];
         }
 
@@ -62,15 +69,15 @@ class JiraIssueContentMapper
     }
 
     /**
-     * Return the HTML string, or null when it is empty.
+     * Return the rewritten HTML string, or null when it is empty.
      */
-    private static function nullableHtml(mixed $value): ?string
+    private static function nullableHtml(mixed $value, ?string $jiraSiteUrl = null): ?string
     {
         if (! is_string($value) || trim($value) === '') {
             return null;
         }
 
-        return $value;
+        return JiraAttachmentProxy::rewriteHtml($value, $jiraSiteUrl);
     }
 
     /**

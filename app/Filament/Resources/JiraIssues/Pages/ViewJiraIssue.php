@@ -68,7 +68,7 @@ class ViewJiraIssue extends ViewRecord
         try {
             $payload = JiraClient::forUser($user)->getIssueContent($this->currentRecord()->jira_key);
 
-            return $this->issueContent = JiraIssueContentMapper::map($payload);
+            return $this->issueContent = JiraIssueContentMapper::map($payload, $user->jira_site_url);
         } catch (JiraApiException) {
             return $this->issueContent = ['description' => null, 'comments' => []];
         }

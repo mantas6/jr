@@ -153,6 +153,18 @@ final class JiraClient
     }
 
     /**
+     * Fetch the raw bytes of an attachment (or thumbnail) by its Jira path.
+     *
+     * The path is a site-relative Jira URL such as
+     * `/rest/api/3/attachment/content/134715`; validate it with
+     * {@see JiraAttachmentProxy::isAllowedPath()} before calling.
+     */
+    public function getAttachment(string $path): Response
+    {
+        return $this->send(fn (PendingRequest $request): Response => $request->get($path));
+    }
+
+    /**
      * Fetch the available transitions for an issue.
      *
      * @return list<array<string, mixed>>
