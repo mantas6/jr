@@ -30,9 +30,20 @@ final class JiraClient
     ];
 
     /**
+     * The schema identifier Jira uses for the (instance-specific) Sprint field.
+     */
+    private const SPRINT_FIELD_SCHEMA = 'com.pyxis.greenhopper.jira:gh-sprint';
+
+    /**
      * The maximum number of issues requested per search page.
      */
     private const MAX_RESULTS = 100;
+
+    /**
+     * The resolved Sprint custom field id (e.g. `customfield_10020`), or null
+     * when the instance has no Sprint field. `false` means "not yet resolved".
+     */
+    private string|false|null $sprintFieldId = false;
 
     public function __construct(
         protected User $user,
@@ -48,7 +59,7 @@ final class JiraClient
             ->withBasicAuth((string) $user->jira_email, (string) $user->jira_api_token)
             ->acceptJson();
 
-        return new static($user, $request);
+        return new self($user, $request);
     }
 
     /**
@@ -62,15 +73,46 @@ final class JiraClient
     }
 
     /**
+     * Resolve the instance-specific Sprint custom field id (e.g.
+     * `customfield_10020`), or null when the Jira instance has no Sprint field.
+     *
+     * The lookup is memoized and never aborts a sync: any failure resolves to
+     * null so issues are still synced without sprint data.
+     */
+    public function sprintFieldId(): ?string
+    {
+        if ($this->sprintFieldId !== false) {
+            return $this->sprintFieldId;
+        }
+
+        try {
+            $fields = $this->send(fn (PendingRequest $request): Response => $request->get('/rest/api/3/field'))->json();
+        } catch (JiraApiException) {
+            return $this->sprintFieldId = null;
+        }
+
+        if (is_array($fields)) {
+            foreach ($fields as $field) {
+                if (is_array($field) && data_get($field, 'schema.custom') === self::SPRINT_FIELD_SCHEMA) {
+                    return $this->sprintFieldId = (string) data_get($field, 'id');
+                }
+            }
+        }
+
+        return $this->sprintFieldId = null;
+    }
+
+    /**
      * Search issues using JQL with cursor-based pagination.
      *
+     * @param  list<string>  $extraFields  Additional issue field ids to request.
      * @return array{issues: list<array<string, mixed>>, nextPageToken?: string|null, isLast?: bool}
      */
-    public function searchIssues(string $jql, ?string $nextPageToken = null): array
+    public function searchIssues(string $jql, ?string $nextPageToken = null, array $extraFields = []): array
     {
         $query = [
             'jql' => $jql,
-            'fields' => implode(',', self::ISSUE_FIELDS),
+            'fields' => implode(',', [...self::ISSUE_FIELDS, ...$extraFields]),
             'maxResults' => self::MAX_RESULTS,
         ];
 

@@ -379,6 +379,51 @@ test('bracketed text in the summary is rendered in bold', function () {
         ->assertSeeHtml('<strong>[API]</strong> Fix broken login');
 });
 
+test('the sprint column renders each sprint name as a badge', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'sprints' => ['Alpha Sprint', 'Beta Sprint'],
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', []);
+
+    Http::fake();
+
+    livewire(ListJiraIssues::class)
+        ->assertCanSeeTableRecords([$issue])
+        ->assertSee('Alpha Sprint')
+        ->assertSee('Beta Sprint');
+});
+
+test('the sprint filter narrows to the selected sprint without partial-name false matches', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $inSprintOne = JiraIssue::factory()->for($user)->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'sprints' => ['Sprint 1'],
+    ]);
+    $inSprintTen = JiraIssue::factory()->for($user)->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'sprints' => ['Sprint 10'],
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', []);
+
+    Http::fake();
+
+    livewire(ListJiraIssues::class)
+        ->filterTable('sprint', 'Sprint 1')
+        ->assertCanSeeTableRecords([$inSprintOne])
+        ->assertCanNotSeeTableRecords([$inSprintTen]);
+});
+
 test('the status line shows the last sync time when connected', function () {
     $user = User::factory()->withJiraConnection()->create([
         'jira_last_synced_at' => now()->subMinutes(3),

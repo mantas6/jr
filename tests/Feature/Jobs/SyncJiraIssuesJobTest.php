@@ -95,6 +95,53 @@ test('it pages through search results and upserts every issue', function () {
     Http::assertSent(fn (Request $request) => isset($request['nextPageToken']) && $request['nextPageToken'] === 'page-2');
 });
 
+test('it syncs sprint names using the auto-detected sprint field', function () {
+    $user = syncUser();
+
+    $issue = jiraIssuePayload('1001', 'PROJ-1', 'First issue');
+    $issue['fields']['customfield_10020'] = [
+        ['name' => 'Sprint 1', 'state' => 'closed'],
+        ['name' => 'Sprint 2', 'state' => 'active'],
+    ];
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'customfield_10020', 'schema' => ['custom' => 'com.pyxis.greenhopper.jira:gh-sprint']],
+        ]),
+        '*/rest/api/3/search/jql*' => Http::response([
+            'issues' => [$issue],
+            'isLast' => true,
+        ]),
+        '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
+    ]);
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    expect(JiraIssue::where('jira_id', '1001')->firstOrFail()->sprints)
+        ->toBe(['Sprint 1', 'Sprint 2']);
+
+    Http::assertSent(fn (Request $request) => isset($request['fields']) && str_contains((string) $request['fields'], 'customfield_10020'));
+});
+
+test('a sync without a sprint field stores null sprints', function () {
+    $user = syncUser();
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'summary', 'schema' => ['type' => 'string']],
+        ]),
+        '*/rest/api/3/search/jql*' => Http::response([
+            'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'First issue')],
+            'isLast' => true,
+        ]),
+        '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
+    ]);
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    expect(JiraIssue::where('jira_id', '1001')->firstOrFail()->sprints)->toBeNull();
+});
+
 test('re-running the sync updates existing rows without duplicating them', function () {
     $user = syncUser();
 

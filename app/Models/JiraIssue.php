@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $assignee_account_id
  * @property string|null $assignee_name
  * @property string|null $reporter_name
+ * @property array<int, string>|null $sprints
  * @property string $jira_url
  * @property Carbon $jira_created_at
  * @property Carbon $jira_updated_at
@@ -44,6 +45,7 @@ use Illuminate\Support\Carbon;
     'assignee_account_id',
     'assignee_name',
     'reporter_name',
+    'sprints',
     'jira_url',
     'jira_created_at',
     'jira_updated_at',
@@ -63,6 +65,7 @@ class JiraIssue extends Model
     protected function casts(): array
     {
         return [
+            'sprints' => 'array',
             'raw' => 'array',
             'jira_created_at' => 'datetime',
             'jira_updated_at' => 'datetime',

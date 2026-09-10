@@ -92,3 +92,69 @@ test('mapForUpsert json-encodes raw and formats timestamps as strings', function
         ->and($row['jira_updated_at'])->toBe('2024-02-03 12:30:00')
         ->and($row['last_synced_at'])->toBe('2024-05-01 09:00:00');
 });
+
+test('sprints is null when no sprint field id is given', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $payload = fullJiraPayload();
+    $payload['fields']['customfield_10020'] = [
+        ['name' => 'Sprint 1', 'state' => 'closed'],
+    ];
+
+    $row = JiraIssueMapper::map($payload, $user);
+
+    expect($row['sprints'])->toBeNull();
+});
+
+test('map extracts every sprint name from the sprint custom field', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $payload = fullJiraPayload();
+    $payload['fields']['customfield_10020'] = [
+        ['name' => 'Sprint 1', 'state' => 'closed'],
+        ['name' => 'Sprint 2', 'state' => 'active'],
+    ];
+
+    $row = JiraIssueMapper::map($payload, $user, null, 'customfield_10020');
+
+    expect($row['sprints'])->toBe(['Sprint 1', 'Sprint 2']);
+});
+
+test('map returns null sprints when the sprint field is empty or absent', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $row = JiraIssueMapper::map(fullJiraPayload(), $user, null, 'customfield_10020');
+
+    expect($row['sprints'])->toBeNull();
+});
+
+test('map parses the legacy sprint string format', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $payload = fullJiraPayload();
+    $payload['fields']['customfield_10020'] = [
+        'com.atlassian.greenhopper.service.sprint.Sprint@1[id=1,name=Legacy Sprint,state=CLOSED]',
+    ];
+
+    $row = JiraIssueMapper::map($payload, $user, null, 'customfield_10020');
+
+    expect($row['sprints'])->toBe(['Legacy Sprint']);
+});
+
+test('mapForUpsert json-encodes the sprints array', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 5;
+
+    $payload = fullJiraPayload();
+    $payload['fields']['customfield_10020'] = [
+        ['name' => 'Sprint 1'],
+    ];
+
+    $row = JiraIssueMapper::mapForUpsert($payload, $user, Carbon::parse('2024-05-01 09:00:00'), 'customfield_10020');
+
+    expect($row['sprints'])->toBe(json_encode(['Sprint 1']));
+});

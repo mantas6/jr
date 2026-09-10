@@ -60,6 +60,51 @@ test('searchIssues omits nextPageToken when null', function () {
     Http::assertSent(fn (Request $request) => ! isset($request['nextPageToken']));
 });
 
+test('searchIssues appends extra fields to the requested field list', function () {
+    Http::fake(['*' => Http::response(['issues' => []])]);
+
+    JiraClient::forUser(jiraUser())->searchIssues('project = "PROJ"', null, ['customfield_10020']);
+
+    Http::assertSent(function (Request $request) {
+        return $request['fields'] === 'summary,status,issuetype,priority,assignee,reporter,created,updated,customfield_10020';
+    });
+});
+
+test('sprintFieldId resolves the sprint custom field id from the fields endpoint', function () {
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'summary', 'schema' => ['type' => 'string']],
+            ['id' => 'customfield_10020', 'schema' => ['custom' => 'com.pyxis.greenhopper.jira:gh-sprint']],
+        ]),
+    ]);
+
+    $client = JiraClient::forUser(jiraUser());
+
+    expect($client->sprintFieldId())->toBe('customfield_10020')
+        ->and($client->sprintFieldId())->toBe('customfield_10020');
+
+    // The result is memoized, so the endpoint is only hit once.
+    Http::assertSentCount(1);
+});
+
+test('sprintFieldId returns null when the instance has no sprint field', function () {
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'summary', 'schema' => ['type' => 'string']],
+        ]),
+    ]);
+
+    expect(JiraClient::forUser(jiraUser())->sprintFieldId())->toBeNull();
+});
+
+test('sprintFieldId returns null instead of failing when the lookup errors', function () {
+    Http::fake([
+        '*/rest/api/3/field' => Http::response(['errorMessages' => ['nope']], 403),
+    ]);
+
+    expect(JiraClient::forUser(jiraUser())->sprintFieldId())->toBeNull();
+});
+
 test('transitionIssue posts the transition body', function () {
     Http::fake(['*' => Http::response(null, 204)]);
 

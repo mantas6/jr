@@ -53,6 +53,7 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         'assignee_account_id',
         'assignee_name',
         'reporter_name',
+        'sprints',
         'jira_url',
         'jira_created_at',
         'jira_updated_at',
@@ -96,19 +97,22 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         $client = JiraClient::forUser($this->user);
         $jql = sprintf('project = "%s" ORDER BY updated DESC', $this->user->jira_project_key);
 
+        $sprintFieldId = $client->sprintFieldId();
+        $extraFields = $sprintFieldId !== null ? [$sprintFieldId] : [];
+
         /** @var array<string, string> $representatives Keyed by "issueType|statusId", value is a representative issue key. */
         $representatives = [];
         $nextPageToken = null;
 
         do {
-            $page = $client->searchIssues($jql, $nextPageToken);
+            $page = $client->searchIssues($jql, $nextPageToken, $extraFields);
 
             $issues = $page['issues'];
 
             $rows = [];
 
             foreach ($issues as $issue) {
-                $row = JiraIssueMapper::mapForUpsert($issue, $this->user, $now);
+                $row = JiraIssueMapper::mapForUpsert($issue, $this->user, $now, $sprintFieldId);
                 $rows[] = $row;
 
                 $pair = $row['issue_type'].'|'.$row['status_id'];

@@ -17,6 +17,7 @@ use Filament\Tables\Columns\SelectColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 
 class JiraIssuesTable
@@ -51,6 +52,12 @@ class JiraIssuesTable
                 self::statusColumn(),
                 self::assigneeColumn(),
                 TextColumn::make('priority'),
+                TextColumn::make('sprints')
+                    ->label('Sprint')
+                    ->badge()
+                    ->color('info')
+                    ->placeholder('—')
+                    ->state(fn (JiraIssue $record): array => $record->sprints ?? []),
                 TextColumn::make('jira_updated_at')
                     ->label('Jira updated')
                     ->formatStateUsing(fn (JiraIssue $record): ?string => $record->jira_updated_at?->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE, short: true))
@@ -71,6 +78,18 @@ class JiraIssuesTable
                 SelectFilter::make('assignee_name')
                     ->label('Assignee')
                     ->options(fn (): array => self::distinctOptions('assignee_name')),
+                SelectFilter::make('sprint')
+                    ->label('Sprint')
+                    ->options(fn (): array => self::sprintOptions())
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+
+                        if (blank($value)) {
+                            return $query;
+                        }
+
+                        return $query->where('sprints', 'like', '%'.json_encode($value).'%');
+                    }),
             ])
             ->defaultSort('jira_updated_at', 'desc')
             ->headerActions([
@@ -264,6 +283,24 @@ class JiraIssuesTable
             ->distinct()
             ->orderBy($column)
             ->pluck($column, $column)
+            ->all();
+    }
+
+    /**
+     * Build the distinct sprint filter options from the current user's issues.
+     *
+     * @return array<string, string>
+     */
+    private static function sprintOptions(): array
+    {
+        return JiraIssue::query()
+            ->where('user_id', auth()->id())
+            ->whereNotNull('sprints')
+            ->pluck('sprints')
+            ->flatMap(fn (mixed $sprints): array => is_array($sprints) ? $sprints : [])
+            ->unique()
+            ->sort()
+            ->mapWithKeys(fn (string $name): array => [$name => $name])
             ->all();
     }
 

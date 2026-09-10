@@ -43,6 +43,7 @@ class JiraIssueFactory extends Factory
             'assignee_account_id' => fake()->optional()->uuid(),
             'assignee_name' => fake()->optional()->name(),
             'reporter_name' => fake()->name(),
+            'sprints' => null,
             'jira_url' => $siteUrl.'/browse/'.$jiraKey,
             'jira_created_at' => fake()->dateTimeBetween('-1 year', '-1 month'),
             'jira_updated_at' => fake()->dateTimeBetween('-1 month', 'now'),
