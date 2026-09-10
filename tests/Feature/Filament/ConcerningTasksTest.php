@@ -112,19 +112,21 @@ test('the un-snooze action is hidden when the task is not snoozed', function () 
         ->assertTableActionHidden('unsnooze', $issue);
 });
 
-test('the resource registers two navigation items with a concerning badge', function () {
+test('the resource registers two navigation items with concerning tasks on top', function () {
     JiraIssue::factory()->for($this->user)->important()->count(2)->create();
 
     $items = JiraIssueResource::getNavigationItems();
 
     expect($items)->toHaveCount(2)
-        ->and($items[0]->getLabel())->toBe('Tasks')
-        ->and($items[1]->getLabel())->toBe('Concerning Tasks')
-        ->and($items[1]->getBadge())->toBe('2');
+        ->and($items[0]->getLabel())->toBe('Concerning Tasks')
+        ->and($items[0]->getSort())->toBe(10)
+        ->and($items[0]->getBadge())->toBe('2')
+        ->and($items[1]->getLabel())->toBe('Tasks')
+        ->and($items[1]->getSort())->toBe(11);
 });
 
 test('the concerning badge is null when nothing needs attention', function () {
     $items = JiraIssueResource::getNavigationItems();
 
-    expect($items[1]->getBadge())->toBeNull();
+    expect($items[0]->getBadge())->toBeNull();
 });

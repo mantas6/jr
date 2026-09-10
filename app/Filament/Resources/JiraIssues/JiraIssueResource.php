@@ -86,17 +86,17 @@ class JiraIssueResource extends Resource
         $concerningCount = static::concerningCount();
 
         return [
-            NavigationItem::make('Tasks')
-                ->icon(Heroicon::OutlinedRectangleStack)
-                ->sort(10)
-                ->isActiveWhen(fn (): bool => original_request()->routeIs($base.'.index', $base.'.view'))
-                ->url(fn (): string => ListJiraIssues::getUrl()),
             NavigationItem::make('Concerning Tasks')
                 ->icon(Heroicon::OutlinedBellAlert)
-                ->sort(11)
+                ->sort(10)
                 ->badge($concerningCount > 0 ? (string) $concerningCount : null, color: 'warning')
                 ->isActiveWhen(fn (): bool => original_request()->routeIs($base.'.concerning'))
                 ->url(fn (): string => ListConcerningTasks::getUrl()),
+            NavigationItem::make('Tasks')
+                ->icon(Heroicon::OutlinedRectangleStack)
+                ->sort(11)
+                ->isActiveWhen(fn (): bool => original_request()->routeIs($base.'.index', $base.'.view'))
+                ->url(fn (): string => ListJiraIssues::getUrl()),
         ];
     }
 
