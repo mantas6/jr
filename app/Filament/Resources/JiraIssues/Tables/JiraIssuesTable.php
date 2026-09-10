@@ -177,7 +177,7 @@ class JiraIssuesTable
     {
         return Action::make('updateStatusAssignee')
             ->label('Update status / assignee')
-            ->icon(Heroicon::PencilSquare)
+            ->icon(Heroicon::ArrowRight)
             ->color('gray')
             ->iconButton()
             ->visible(fn (): bool => self::user()->hasJiraConnection())
