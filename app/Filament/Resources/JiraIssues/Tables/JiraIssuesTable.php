@@ -9,6 +9,7 @@ use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraIssueActions;
 use App\Services\Jira\JiraTransitionsCache;
+use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
@@ -42,11 +43,11 @@ class JiraIssuesTable
                 TextColumn::make('priority'),
                 TextColumn::make('jira_updated_at')
                     ->label('Jira updated')
-                    ->formatStateUsing(fn (JiraIssue $record): ?string => $record->jira_updated_at?->diffForHumans(short: true))
+                    ->formatStateUsing(fn (JiraIssue $record): ?string => $record->jira_updated_at?->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE, short: true))
                     ->sortable(),
                 TextColumn::make('last_synced_at')
                     ->label('Last synced')
-                    ->formatStateUsing(fn (JiraIssue $record): ?string => $record->last_synced_at?->diffForHumans(short: true))
+                    ->formatStateUsing(fn (JiraIssue $record): ?string => $record->last_synced_at?->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE, short: true))
                     ->color(fn (JiraIssue $record): ?string => self::isStale($record) ? 'warning' : null)
                     ->description(fn (JiraIssue $record): ?string => self::isStale($record) ? 'Stale' : null)
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -85,15 +86,25 @@ class JiraIssuesTable
      */
     private static function issueTypeColor(?string $issueType): string
     {
-        return match (strtolower((string) $issueType)) {
+        $issueType = strtolower((string) $issueType);
+
+        $keywordColors = [
+            'sub' => 'gray',
             'bug' => 'danger',
             'story' => 'success',
-            'task' => 'info',
-            'sub-task', 'subtask' => 'gray',
             'epic' => 'primary',
-            'improvement', 'new feature' => 'warning',
-            default => 'gray',
-        };
+            'improvement' => 'warning',
+            'feature' => 'warning',
+            'task' => 'info',
+        ];
+
+        foreach ($keywordColors as $keyword => $color) {
+            if (str_contains($issueType, $keyword)) {
+                return $color;
+            }
+        }
+
+        return 'gray';
     }
 
     private static function statusColumn(): SelectColumn
