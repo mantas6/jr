@@ -1,0 +1,169 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:artisan\(\)\.$#'
+			identifier: method.notFound
+			count: 4
+			path: tests/Feature/Console/SyncJiraIssuesCommandTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:get\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: tests/Feature/ExampleTest.php
+
+		-
+			message: '#^Access to an undefined property Pest\\PendingCalls\\TestCall\:\:\$user\.$#'
+			identifier: property.notFound
+			count: 15
+			path: tests/Feature/Filament/ConcerningTasksTest.php
+
+		-
+			message: '#^Anonymous function should return Pest\\Mixins\\Expectation\<bool\|null\> but returns Pest\\Mixins\\Expectation\<bool\|null\>\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Feature/Filament/ConcerningTasksTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:actingAs\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Feature/Filament/ConcerningTasksTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:actingAs\(\)\.$#'
+			identifier: method.notFound
+			count: 7
+			path: tests/Feature/Filament/JiraConnectionPageTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:assertAuthenticated\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Feature/Filament/JiraConnectionPageTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:get\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Feature/Filament/JiraConnectionPageTest.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Testing\\TestResponse\:\:call\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Feature/Filament/JiraIssueResourceTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:actingAs\(\)\.$#'
+			identifier: method.notFound
+			count: 32
+			path: tests/Feature/Filament/JiraIssueResourceTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:get\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Feature/Filament/JiraIssueResourceTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:actingAs\(\)\.$#'
+			identifier: method.notFound
+			count: 4
+			path: tests/Feature/Http/JiraAttachmentControllerTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:get\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Feature/Http/JiraAttachmentControllerTest.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Contracts\\Queue\\Job\:\:\$failedWith\.$#'
+			identifier: property.notFound
+			count: 1
+			path: tests/Feature/Jobs/SyncJiraIssuesJobTest.php
+
+		-
+			message: '#^Access to an undefined property object\:\:\$expiresAfter\.$#'
+			identifier: property.notFound
+			count: 1
+			path: tests/Feature/Jobs/SyncJiraIssuesJobTest.php
+
+		-
+			message: '#^Access to an undefined property object\:\:\$key\.$#'
+			identifier: property.notFound
+			count: 1
+			path: tests/Feature/Jobs/SyncJiraIssuesJobTest.php
+
+		-
+			message: '#^Access to an undefined property object\:\:\$releaseAfter\.$#'
+			identifier: property.notFound
+			count: 1
+			path: tests/Feature/Jobs/SyncJiraIssuesJobTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:freezeTime\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Feature/Jobs/SyncJiraIssuesJobTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:travelTo\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Feature/Jobs/SyncJiraIssuesJobTest.php
+
+		-
+			message: '#^Function jiraIssuePayload\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Feature/Jobs/SyncJiraIssuesJobTest.php
+
+		-
+			message: '#^Function syncUser\(\) has parameter \$attributes with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Feature/Jobs/SyncJiraIssuesJobTest.php
+
+		-
+			message: '#^Unable to resolve the template type TAndValue in call to method Pest\\Expectation\<mixed\>\:\:and\(\)$#'
+			identifier: argument.templateType
+			count: 3
+			path: tests/Feature/Jobs/SyncJiraIssuesJobTest.php
+
+		-
+			message: '#^Function mentionsUser\(\) has parameter \$attributes with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Feature/Jobs/SyncJiraMentionsJobTest.php
+
+		-
+			message: '#^Access to an undefined property Pest\\PendingCalls\\TestCall\:\:\$user\.$#'
+			identifier: property.notFound
+			count: 17
+			path: tests/Feature/Models/JiraIssueConcerningTest.php
+
+		-
+			message: '#^Call to an undefined method Pest\\PendingCalls\\TestCall\:\:fail\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Feature/Services/JiraClientTest.php
+
+		-
+			message: '#^Function livewire\(\) return type with generic class Livewire\\Features\\SupportTesting\\Testable does not specify its types\: TComponent$#'
+			identifier: missingType.generics
+			count: 1
+			path: tests/Pest.php
+
+		-
+			message: '#^Function fullJiraPayload\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/Services/JiraIssueMapperTest.php
+
+		-
+			message: '#^Parameter \#1 \$json of function json_decode expects string, int\|string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Unit/Services/JiraIssueMapperTest.php
