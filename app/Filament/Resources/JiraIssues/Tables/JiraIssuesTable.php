@@ -29,9 +29,16 @@ class JiraIssuesTable
                     ->label('Key')
                     ->url(fn (JiraIssue $record): string => $record->jira_url, shouldOpenInNewTab: true)
                     ->color('primary')
-                    ->copyable()
                     ->sortable()
                     ->searchable(),
+                TextColumn::make('copy_key')
+                    ->label('')
+                    ->state('')
+                    ->icon(Heroicon::ClipboardDocument)
+                    ->tooltip('Copy key')
+                    ->copyable()
+                    ->copyableState(fn (JiraIssue $record): string => $record->jira_key)
+                    ->copyMessage('Key copied'),
                 TextColumn::make('summary')
                     ->html()
                     ->formatStateUsing(fn (JiraIssue $record): string => self::boldBracketedText($record->summary))
