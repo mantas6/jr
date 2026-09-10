@@ -29,8 +29,11 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
 
     /**
      * The number of times the job may be attempted.
+     *
+     * Allows a few overlap-release retries when a forced run queues behind a
+     * scheduled sync that is still in flight.
      */
-    public int $tries = 1;
+    public int $tries = 5;
 
     /**
      * The number of seconds the job may run before timing out.
@@ -63,19 +66,30 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
 
     /**
      * Create a new job instance.
+     *
+     * A forced run bypasses the incremental window and always performs a full
+     * project sync (manual "Full resync" button / `jira:sync --force`).
      */
-    public function __construct(public User $user) {}
+    public function __construct(public User $user, public bool $force = false) {}
 
     /**
      * Get the unique ID for the job.
+     *
+     * A forced run uses a distinct key so a manual full resync is not deduped
+     * by an already-queued scheduled (incremental) run.
      */
     public function uniqueId(): string
     {
-        return (string) $this->user->id;
+        return $this->force
+            ? $this->user->id.':force'
+            : (string) $this->user->id;
     }
 
     /**
      * Get the middleware the job should pass through.
+     *
+     * A forced run queues behind an in-flight sync by releasing back onto the
+     * queue rather than being dropped.
      *
      * @return array<int, object>
      */
@@ -83,7 +97,7 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
     {
         return [
             (new WithoutOverlapping((string) $this->user->id))
-                ->dontRelease()
+                ->releaseAfter(15)
                 ->expireAfter(600),
         ];
     }
@@ -97,9 +111,24 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        try {
+            $this->sync();
+        } catch (Throwable $exception) {
+            $this->fail($exception);
+        }
+    }
+
+    /**
+     * Pull issues from Jira into the local table, warm the transitions cache,
+     * and stamp the sync timestamps.
+     */
+    private function sync(): void
+    {
         $now = Carbon::now();
+        $isFullSync = $this->isFullSync($now);
+
         $client = JiraClient::forUser($this->user);
-        $jql = sprintf('project = "%s" ORDER BY updated DESC', $this->user->jira_project_key);
+        $jql = $this->buildJql($isFullSync, $now);
 
         $sprintFieldId = $client->sprintFieldId();
         $extraFields = $sprintFieldId !== null ? [$sprintFieldId] : [];
@@ -133,12 +162,70 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
 
         $this->warmTransitionsCache($client, $representatives);
 
-        $this->user->forceFill([
+        $attributes = [
             'jira_last_synced_at' => $now,
             'jira_last_sync_error' => null,
-        ])->save();
+        ];
+
+        if ($isFullSync) {
+            $attributes['jira_last_full_synced_at'] = $now;
+        }
+
+        $this->user->forceFill($attributes)->save();
 
         SyncJiraMentionsJob::dispatch($this->user);
+    }
+
+    /**
+     * Determine whether this run should pull the entire project rather than the
+     * incremental window. Self-promotes to a full sync once every 24 hours so a
+     * separate nightly cron is unnecessary.
+     */
+    private function isFullSync(Carbon $now): bool
+    {
+        if ($this->force) {
+            return true;
+        }
+
+        $lastFullSyncedAt = $this->user->jira_last_full_synced_at;
+
+        return $lastFullSyncedAt === null
+            || $lastFullSyncedAt->lt($now->copy()->subDay());
+    }
+
+    /**
+     * Build the search JQL. A full sync pulls the whole project; an incremental
+     * sync only pulls issues updated within a relative window (avoiding timezone
+     * pitfalls) sized to the time since the last sync plus an overlap buffer.
+     */
+    private function buildJql(bool $isFullSync, Carbon $now): string
+    {
+        $project = (string) $this->user->jira_project_key;
+
+        if ($isFullSync) {
+            return sprintf('project = "%s" ORDER BY updated DESC', $project);
+        }
+
+        return sprintf(
+            'project = "%s" AND updated >= -%dm ORDER BY updated DESC',
+            $project,
+            $this->incrementalWindowMinutes($now),
+        );
+    }
+
+    /**
+     * Minutes since the last sync plus a 5 minute overlap buffer for clock skew
+     * and mid-sync edits.
+     */
+    private function incrementalWindowMinutes(Carbon $now): int
+    {
+        $lastSyncedAt = $this->user->jira_last_synced_at;
+
+        $elapsed = $lastSyncedAt !== null
+            ? (int) ceil($lastSyncedAt->diffInMinutes($now))
+            : 0;
+
+        return $elapsed + 5;
     }
 
     /**

@@ -10,7 +10,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
-#[Signature('jira:sync {user? : User ID}')]
+#[Signature('jira:sync {user? : User ID} {--force : Force a full project resync}')]
 #[Description('Queue a Jira issue sync for a single user or every connected user.')]
 class SyncJiraIssuesCommand extends Command
 {
@@ -41,7 +41,7 @@ class SyncJiraIssuesCommand extends Command
             return self::FAILURE;
         }
 
-        SyncJiraIssuesJob::dispatch($user);
+        SyncJiraIssuesJob::dispatch($user, force: (bool) $this->option('force'));
 
         $this->info("Queued Jira sync for user [{$userId}].");
 
@@ -54,11 +54,12 @@ class SyncJiraIssuesCommand extends Command
     private function dispatchForAllConnectedUsers(): int
     {
         $count = 0;
+        $force = (bool) $this->option('force');
 
         User::query()
             ->whereNotNull('jira_connected_at')
-            ->each(function (User $user) use (&$count): void {
-                SyncJiraIssuesJob::dispatch($user);
+            ->each(function (User $user) use (&$count, $force): void {
+                SyncJiraIssuesJob::dispatch($user, force: $force);
                 $count++;
             });
 

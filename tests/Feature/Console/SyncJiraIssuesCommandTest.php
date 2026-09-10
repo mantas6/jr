@@ -28,7 +28,20 @@ test('it dispatches a sync for a single user by id', function () {
 
     Queue::assertPushed(
         SyncJiraIssuesJob::class,
-        fn (SyncJiraIssuesJob $job) => $job->user->is($user),
+        fn (SyncJiraIssuesJob $job) => $job->user->is($user) && $job->force === false,
+    );
+});
+
+test('the force option dispatches a forced full resync', function () {
+    Queue::fake();
+
+    $user = User::factory()->withJiraConnection()->create();
+
+    $this->artisan('jira:sync', ['user' => $user->id, '--force' => true])->assertSuccessful();
+
+    Queue::assertPushed(
+        SyncJiraIssuesJob::class,
+        fn (SyncJiraIssuesJob $job) => $job->user->is($user) && $job->force === true,
     );
 });
 

@@ -29,6 +29,7 @@ use Illuminate\Support\Str;
  * @property string|null $jira_project_key
  * @property Carbon|null $jira_connected_at
  * @property Carbon|null $jira_last_synced_at
+ * @property Carbon|null $jira_last_full_synced_at
  * @property string|null $jira_last_sync_error
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -44,6 +45,7 @@ use Illuminate\Support\Str;
     'jira_project_key',
     'jira_connected_at',
     'jira_last_synced_at',
+    'jira_last_full_synced_at',
     'jira_last_sync_error',
 ])]
 #[Hidden(['password', 'remember_token', 'jira_api_token'])]
@@ -65,6 +67,7 @@ class User extends Authenticatable implements FilamentUser
             'jira_api_token' => 'encrypted',
             'jira_connected_at' => 'datetime',
             'jira_last_synced_at' => 'datetime',
+            'jira_last_full_synced_at' => 'datetime',
         ];
     }
 

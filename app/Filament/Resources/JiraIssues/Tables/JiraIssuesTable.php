@@ -129,6 +129,19 @@ class JiraIssuesTable
                             ->title('Sync queued')
                             ->send();
                     }),
+                Action::make('forceSync')
+                    ->label('Full resync')
+                    ->icon(Heroicon::ArrowPathRoundedSquare)
+                    ->disabled(fn (): bool => ! self::user()->hasJiraConnection())
+                    ->tooltip(fn (): ?string => self::user()->hasJiraConnection() ? null : 'Connect Jira first')
+                    ->action(function (): void {
+                        SyncJiraIssuesJob::dispatch(self::user(), force: true);
+
+                        Notification::make()
+                            ->success()
+                            ->title('Full sync queued')
+                            ->send();
+                    }),
             ])
             ->poll('30s');
     }

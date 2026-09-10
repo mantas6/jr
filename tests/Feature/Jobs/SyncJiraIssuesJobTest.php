@@ -242,7 +242,7 @@ test('a failing transitions call does not abort the sync', function () {
         ->and($user->fresh()->jira_last_synced_at)->not->toBeNull();
 });
 
-test('a 401 from search throws and failed() records the error message', function () {
+test('a 401 from search fails the job and failed() records the error message', function () {
     $user = syncUser();
 
     Http::fake([
@@ -250,16 +250,18 @@ test('a 401 from search throws and failed() records the error message', function
         '*/rest/api/3/search/jql*' => Http::response(['errorMessages' => ['nope']], 401),
     ]);
 
-    $job = new SyncJiraIssuesJob($user);
+    $job = (new SyncJiraIssuesJob($user))->withFakeQueueInteractions();
 
-    try {
-        $job->handle();
-        $this->fail('Expected JiraApiException was not thrown.');
-    } catch (JiraApiException $exception) {
-        $job->failed($exception);
-    }
+    $job->handle();
 
-    expect($user->fresh()->jira_last_sync_error)
+    $job->assertFailedWith(JiraApiException::class);
+
+    $exception = $job->job->failedWith;
+    $job->failed($exception);
+
+    expect($exception->getMessage())
+        ->toBe('Jira rejected the credentials (401). Check your email and API token.')
+        ->and($user->fresh()->jira_last_sync_error)
         ->toBe('Jira rejected the credentials (401). Check your email and API token.');
 });
 
@@ -284,7 +286,7 @@ test('the job is unique per user so a duplicate dispatch is ignored', function (
     Queue::assertPushed(SyncJiraIssuesJob::class, 1);
 });
 
-test('the job refuses to overlap per user and drops the duplicate', function () {
+test('the job releases behind an in-flight sync per user', function () {
     $user = syncUser();
 
     $middleware = collect((new SyncJiraIssuesJob($user))->middleware())
@@ -292,7 +294,7 @@ test('the job refuses to overlap per user and drops the duplicate', function () 
 
     expect($middleware)->not->toBeNull()
         ->and($middleware->key)->toBe((string) $user->id)
-        ->and($middleware->releaseAfter)->toBeNull()
+        ->and($middleware->releaseAfter)->toBe(15)
         ->and($middleware->expiresAfter)->toBe(600);
 });
 
@@ -314,4 +316,107 @@ test('a successful sync dispatches the mentions scan job', function () {
         SyncJiraMentionsJob::class,
         fn (SyncJiraMentionsJob $job): bool => $job->user->is($user),
     );
+});
+
+/**
+ * Fake a minimal single-issue search response for JQL inspection tests.
+ */
+function fakeSingleIssueSync(): void
+{
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
+        '*/rest/api/3/search/jql*' => Http::response([
+            'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'First issue')],
+            'isLast' => true,
+        ]),
+        '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
+    ]);
+}
+
+/**
+ * Assert the JQL sent to the search endpoint matches the expectation.
+ */
+function assertSyncJql(string $expected): void
+{
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/search/jql')
+        && $request['jql'] === $expected);
+}
+
+test('a first run with no prior full sync performs a full project sync', function () {
+    $user = syncUser();
+
+    fakeSingleIssueSync();
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    assertSyncJql('project = "PROJ" ORDER BY updated DESC');
+
+    expect($user->fresh()->jira_last_full_synced_at)->not->toBeNull();
+});
+
+test('a stale full sync older than 24h promotes to a full sync', function () {
+    $this->freezeTime();
+
+    $user = syncUser([
+        'jira_last_synced_at' => now()->subMinutes(10),
+        'jira_last_full_synced_at' => now()->subHours(25),
+    ]);
+
+    fakeSingleIssueSync();
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    assertSyncJql('project = "PROJ" ORDER BY updated DESC');
+
+    expect($user->fresh()->jira_last_full_synced_at->toDateTimeString())
+        ->toBe(now()->toDateTimeString());
+});
+
+test('a recent full sync runs incrementally with a relative updated window', function () {
+    $this->travelTo(now()->startOfSecond());
+
+    $fullSyncedAt = now()->subHours(2);
+
+    $user = syncUser([
+        'jira_last_synced_at' => now()->subMinutes(10),
+        'jira_last_full_synced_at' => $fullSyncedAt,
+    ]);
+
+    fakeSingleIssueSync();
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    assertSyncJql('project = "PROJ" AND updated >= -15m ORDER BY updated DESC');
+
+    $user->refresh();
+
+    expect($user->jira_last_full_synced_at->toDateTimeString())
+        ->toBe($fullSyncedAt->toDateTimeString())
+        ->and($user->jira_last_synced_at->toDateTimeString())
+        ->toBe(now()->toDateTimeString());
+});
+
+test('a forced run performs a full sync even when a recent full sync exists', function () {
+    $this->freezeTime();
+
+    $user = syncUser([
+        'jira_last_synced_at' => now()->subMinutes(10),
+        'jira_last_full_synced_at' => now()->subHours(2),
+    ]);
+
+    fakeSingleIssueSync();
+
+    (new SyncJiraIssuesJob($user, force: true))->handle();
+
+    assertSyncJql('project = "PROJ" ORDER BY updated DESC');
+
+    expect($user->fresh()->jira_last_full_synced_at->toDateTimeString())
+        ->toBe(now()->toDateTimeString());
+});
+
+test('a forced run uses a distinct unique id so it is not deduped', function () {
+    $user = syncUser();
+
+    expect((new SyncJiraIssuesJob($user))->uniqueId())->toBe((string) $user->id)
+        ->and((new SyncJiraIssuesJob($user, force: true))->uniqueId())->toBe($user->id.':force');
 });

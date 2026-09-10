@@ -168,6 +168,7 @@ class JiraConnection extends Page
             'jira_project_key' => null,
             'jira_connected_at' => null,
             'jira_last_synced_at' => null,
+            'jira_last_full_synced_at' => null,
             'jira_last_sync_error' => null,
         ])->save();
 

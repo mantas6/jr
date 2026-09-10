@@ -88,6 +88,32 @@ test('the sync action is disabled when jira is not connected', function () {
         ->assertTableActionDisabled('sync');
 });
 
+test('the full resync header action dispatches a forced job and notifies', function () {
+    Http::fake();
+    Queue::fake();
+
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    livewire(ListJiraIssues::class)
+        ->callTableAction('forceSync')
+        ->assertNotified('Full sync queued');
+
+    Queue::assertPushed(
+        SyncJiraIssuesJob::class,
+        fn (SyncJiraIssuesJob $job) => $job->user->is($user) && $job->force === true,
+    );
+});
+
+test('the full resync action is disabled when jira is not connected', function () {
+    Http::fake();
+
+    $this->actingAs(User::factory()->create());
+
+    livewire(ListJiraIssues::class)
+        ->assertTableActionDisabled('forceSync');
+});
+
 test('opening the update modal reads status options from cache without hitting jira', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
