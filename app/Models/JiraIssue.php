@@ -26,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $reporter_name
  * @property array<int, string>|null $sprints
  * @property bool $is_important
+ * @property Carbon|null $concerning_since
  * @property Carbon|null $snoozed_until
  * @property Carbon|null $dismissed_at
  * @property bool $mentions_me
@@ -53,6 +54,7 @@ use Illuminate\Support\Carbon;
     'reporter_name',
     'sprints',
     'is_important',
+    'concerning_since',
     'snoozed_until',
     'dismissed_at',
     'mentions_me',
@@ -81,9 +83,11 @@ class JiraIssue extends Model
     /**
      * Scope the query to issues that currently need the user's attention.
      *
-     * A task is "concerning" when it is not snoozed and either it is marked
-     * important, or it is assigned to the user / mentions the user and has been
-     * updated in Jira since it was last dismissed.
+     * A task is "concerning" when it is not snoozed and either it has been
+     * pinned to the list (starred at some point and not dismissed since), or it
+     * is assigned to the user / mentions the user and has been updated in Jira
+     * since it was last dismissed. Unstarring a pinned task keeps it on the list
+     * until the task is explicitly dismissed.
      *
      * @param  Builder<JiraIssue>  $query
      * @return Builder<JiraIssue>
@@ -96,7 +100,7 @@ class JiraIssue extends Model
                     ->orWhere('snoozed_until', '<=', now());
             })
             ->where(function (Builder $query) use ($user): void {
-                $query->where('is_important', true)
+                $query->whereNotNull('concerning_since')
                     ->orWhere(function (Builder $query) use ($user): void {
                         $query->where(function (Builder $query) use ($user): void {
                             if (filled($user->jira_account_id)) {
@@ -122,6 +126,7 @@ class JiraIssue extends Model
         return [
             'sprints' => 'array',
             'is_important' => 'boolean',
+            'concerning_since' => 'datetime',
             'snoozed_until' => 'datetime',
             'dismissed_at' => 'datetime',
             'mentions_me' => 'boolean',

@@ -29,6 +29,19 @@ test('an important task is concerning', function () {
     expect(concerningIds($this->user))->toContain($issue->id);
 });
 
+test('an unstarred task that was pinned stays concerning until dismissed', function () {
+    $issue = JiraIssue::factory()->for($this->user)->concerning()->create([
+        'assignee_account_id' => null,
+        'mentions_me' => false,
+    ]);
+
+    expect(concerningIds($this->user))->toContain($issue->id);
+
+    $issue->update(['dismissed_at' => now(), 'is_important' => false, 'concerning_since' => null]);
+
+    expect(concerningIds($this->user))->not->toContain($issue->id);
+});
+
 test('a task assigned to me and updated since dismissal is concerning', function () {
     $issue = JiraIssue::factory()->for($this->user)->create([
         'assignee_account_id' => 'acc-me',

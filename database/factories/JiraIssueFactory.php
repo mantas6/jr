@@ -46,6 +46,7 @@ class JiraIssueFactory extends Factory
             'reporter_name' => fake()->name(),
             'sprints' => null,
             'is_important' => false,
+            'concerning_since' => null,
             'snoozed_until' => null,
             'dismissed_at' => null,
             'mentions_me' => false,
@@ -59,12 +60,25 @@ class JiraIssueFactory extends Factory
     }
 
     /**
-     * Mark the issue as important (starred).
+     * Mark the issue as important (starred), pinning it to the concerning list.
      */
     public function important(): static
     {
         return $this->state(fn (array $attributes): array => [
             'is_important' => true,
+            'concerning_since' => now(),
+        ]);
+    }
+
+    /**
+     * Pin the issue to the concerning list without starring it, mirroring a task
+     * that was starred and later unstarred.
+     */
+    public function concerning(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'is_important' => false,
+            'concerning_since' => now(),
         ]);
     }
 

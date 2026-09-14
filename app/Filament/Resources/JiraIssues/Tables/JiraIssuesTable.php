@@ -359,19 +359,23 @@ class JiraIssuesTable
     }
 
     /**
-     * Dismiss a task until Jira reports newer activity. A dismissed task is also
-     * unstarred so it does not linger on the concerning list via the important flag.
+     * Dismiss a task until Jira reports newer activity. Dismissing also unstars
+     * the task and clears its concerning pin so it does not linger on the
+     * concerning list.
      */
     private static function dismissRecord(JiraIssue $record): void
     {
         $record->update([
             'dismissed_at' => Carbon::now(),
             'is_important' => false,
+            'concerning_since' => null,
         ]);
     }
 
     /**
-     * Toggle the important (starred) flag. Available on both task lists.
+     * Toggle the important (starred) flag. Available on both task lists. Starring
+     * pins the task to the concerning list; unstarring keeps it pinned so it
+     * stays on the list until the task is dismissed.
      */
     private static function starAction(): Action
     {
@@ -380,7 +384,10 @@ class JiraIssuesTable
             ->icon(fn (JiraIssue $record): Heroicon => $record->is_important ? Heroicon::Star : Heroicon::OutlinedStar)
             ->color(fn (JiraIssue $record): string => $record->is_important ? 'warning' : 'gray')
             ->iconButton()
-            ->action(fn (JiraIssue $record) => $record->update(['is_important' => !$record->is_important]));
+            ->action(fn (JiraIssue $record) => $record->update([
+                'is_important' => !$record->is_important,
+                'concerning_since' => $record->concerning_since ?? Carbon::now(),
+            ]));
     }
 
     /**
@@ -445,7 +452,10 @@ class JiraIssuesTable
             ->icon(Heroicon::Star)
             ->color('warning')
             ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
-            ->action(fn (Collection $records) => $records->each->update(['is_important' => true]))
+            ->action(fn (Collection $records) => $records->each(fn (JiraIssue $record) => $record->update([
+                'is_important' => true,
+                'concerning_since' => $record->concerning_since ?? Carbon::now(),
+            ])))
             ->deselectRecordsAfterCompletion();
     }
 
@@ -488,6 +498,7 @@ class JiraIssuesTable
             ->action(fn (Collection $records) => $records->each->update([
                 'dismissed_at' => Carbon::now(),
                 'is_important' => false,
+                'concerning_since' => null,
             ]))
             ->deselectRecordsAfterCompletion();
     }

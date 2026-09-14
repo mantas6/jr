@@ -119,7 +119,10 @@ class ViewJiraIssue extends ViewRecord
             ->color(fn (): string => $this->currentRecord()->is_important ? 'warning' : 'gray')
             ->action(function (): void {
                 $record = $this->currentRecord();
-                $record->update(['is_important' => !$record->is_important]);
+                $record->update([
+                    'is_important' => !$record->is_important,
+                    'concerning_since' => $record->concerning_since ?? now(),
+                ]);
 
                 Notification::make()->success()->title($record->is_important ? 'Marked important' : 'Unstarred')->send();
             });
@@ -179,7 +182,7 @@ class ViewJiraIssue extends ViewRecord
             ->icon(Heroicon::OutlinedCheck)
             ->color('gray')
             ->action(function (): void {
-                $this->currentRecord()->update(['dismissed_at' => now(), 'is_important' => false]);
+                $this->currentRecord()->update(['dismissed_at' => now(), 'is_important' => false, 'concerning_since' => null]);
 
                 Notification::make()->success()->title('Dismissed')->send();
             });

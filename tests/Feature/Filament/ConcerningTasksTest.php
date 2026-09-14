@@ -43,6 +43,30 @@ test('starring a task from the full list marks it important', function () {
     expect($issue->fresh()->is_important)->toBeFalse();
 });
 
+test('unstarring a task keeps it on the concerning list until dismissed', function () {
+    $issue = JiraIssue::factory()->for($this->user)->create([
+        'assignee_account_id' => 'acc-someone',
+        'mentions_me' => false,
+        'is_important' => true,
+        'concerning_since' => now(),
+    ]);
+
+    livewire(ListConcerningTasks::class)
+        ->callTableAction('toggleImportant', $issue)
+        ->assertCanSeeTableRecords([$issue->fresh()]);
+
+    expect($issue->fresh()->is_important)->toBeFalse()
+        ->and($issue->fresh()->concerning_since)->not->toBeNull();
+
+    livewire(ListConcerningTasks::class)
+        ->callTableAction('dismiss', $issue);
+
+    expect($issue->fresh()->concerning_since)->toBeNull();
+
+    livewire(ListConcerningTasks::class)
+        ->assertCanNotSeeTableRecords([$issue->fresh()]);
+});
+
 test('snoozing a task sets the snooze window at midnight on the concerning list', function () {
     $issue = JiraIssue::factory()->for($this->user)->important()->create();
 
@@ -66,19 +90,21 @@ test('each snooze duration maps to midnight of the expected day', function (stri
     ['next_week', fn () => now()->addWeek()->startOfDay()],
 ]);
 
-test('dismissing a task stamps dismissed_at and unstars it', function () {
+test('dismissing a task stamps dismissed_at, unstars it, and clears its pin', function () {
     $issue = JiraIssue::factory()->for($this->user)->create([
         'assignee_account_id' => 'acc-me',
         'jira_updated_at' => now(),
         'dismissed_at' => null,
         'is_important' => true,
+        'concerning_since' => now(),
     ]);
 
     livewire(ListConcerningTasks::class)
         ->callTableAction('dismiss', $issue);
 
     expect($issue->fresh()->dismissed_at)->not->toBeNull()
-        ->and($issue->fresh()->is_important)->toBeFalse();
+        ->and($issue->fresh()->is_important)->toBeFalse()
+        ->and($issue->fresh()->concerning_since)->toBeNull();
 });
 
 test('un-snoozing a task from the full list clears the snooze window', function () {
@@ -132,19 +158,21 @@ test('bulk snoozing sets the window on every selected task', function () {
     });
 });
 
-test('bulk dismissing stamps and unstars every selected task', function () {
+test('bulk dismissing stamps, unstars, and clears the pin on every selected task', function () {
     $issue = JiraIssue::factory()->for($this->user)->create([
         'assignee_account_id' => 'acc-me',
         'jira_updated_at' => now(),
         'dismissed_at' => null,
         'is_important' => true,
+        'concerning_since' => now(),
     ]);
 
     livewire(ListConcerningTasks::class)
         ->callTableBulkAction('bulkDismiss', collect([$issue]));
 
     expect($issue->fresh()->dismissed_at)->not->toBeNull()
-        ->and($issue->fresh()->is_important)->toBeFalse();
+        ->and($issue->fresh()->is_important)->toBeFalse()
+        ->and($issue->fresh()->concerning_since)->toBeNull();
 });
 
 test('the bulk actions are hidden on the full task list', function () {
