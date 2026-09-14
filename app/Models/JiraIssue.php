@@ -81,39 +81,73 @@ class JiraIssue extends Model
     }
 
     /**
-     * Scope the query to issues that currently need the user's attention.
-     *
-     * A task is "concerning" when it is not snoozed and either it has been
-     * pinned to the list (starred at some point and not dismissed since), or it
-     * is assigned to the user / mentions the user and has been updated in Jira
-     * since it was last dismissed. Unstarring a pinned task keeps it on the list
-     * until the task is explicitly dismissed.
+     * Scope the query to issues that currently need the user's attention and are
+     * not snoozed. Composes {@see scopeNotSnoozed()} with {@see scopeConcerning()}.
      *
      * @param  Builder<JiraIssue>  $query
      * @return Builder<JiraIssue>
      */
     public function scopeConcerningFor(Builder $query, User $user): Builder
     {
-        return $query
-            ->where(function (Builder $query): void {
-                $query->whereNull('snoozed_until')
-                    ->orWhere('snoozed_until', '<=', now());
-            })
-            ->where(function (Builder $query) use ($user): void {
-                $query->whereNotNull('concerning_since')
-                    ->orWhere(function (Builder $query) use ($user): void {
-                        $query->where(function (Builder $query) use ($user): void {
-                            if (filled($user->jira_account_id)) {
-                                $query->where('assignee_account_id', $user->jira_account_id);
-                            }
+        return $query->notSnoozed()->concerning($user);
+    }
 
-                            $query->orWhere('mentions_me', true);
-                        })->where(function (Builder $query): void {
-                            $query->whereNull('dismissed_at')
-                                ->orWhereColumn('jira_updated_at', '>', 'dismissed_at');
-                        });
+    /**
+     * Scope the query to issues that need the user's attention, regardless of
+     * snooze state.
+     *
+     * A task is "concerning" when it has been pinned to the list (starred at some
+     * point and not dismissed since), or it is assigned to the user / mentions
+     * the user and has been updated in Jira since it was last dismissed.
+     * Unstarring a pinned task keeps it on the list until it is explicitly
+     * dismissed.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    public function scopeConcerning(Builder $query, User $user): Builder
+    {
+        return $query->where(function (Builder $query) use ($user): void {
+            $query->whereNotNull('concerning_since')
+                ->orWhere(function (Builder $query) use ($user): void {
+                    $query->where(function (Builder $query) use ($user): void {
+                        if (filled($user->jira_account_id)) {
+                            $query->where('assignee_account_id', $user->jira_account_id);
+                        }
+
+                        $query->orWhere('mentions_me', true);
+                    })->where(function (Builder $query): void {
+                        $query->whereNull('dismissed_at')
+                            ->orWhereColumn('jira_updated_at', '>', 'dismissed_at');
                     });
-            });
+                });
+        });
+    }
+
+    /**
+     * Scope the query to issues that are not currently snoozed.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    public function scopeNotSnoozed(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->whereNull('snoozed_until')
+                ->orWhere('snoozed_until', '<=', now());
+        });
+    }
+
+    /**
+     * Scope the query to issues that are currently snoozed.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    public function scopeSnoozed(Builder $query): Builder
+    {
+        return $query->whereNotNull('snoozed_until')
+            ->where('snoozed_until', '>', now());
     }
 
     /**

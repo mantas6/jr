@@ -29,6 +29,42 @@ test('the concerning page only shows tasks that need attention', function () {
         ->assertCanNotSeeTableRecords([$quiet]);
 });
 
+test('the concerning page hides snoozed tasks by default', function () {
+    $active = JiraIssue::factory()->for($this->user)->important()->create();
+    $snoozed = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+
+    livewire(ListConcerningTasks::class)
+        ->assertCanSeeTableRecords([$active])
+        ->assertCanNotSeeTableRecords([$snoozed]);
+});
+
+test('the snooze filter can reveal only snoozed tasks on the concerning page', function () {
+    $active = JiraIssue::factory()->for($this->user)->important()->create();
+    $snoozed = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+
+    livewire(ListConcerningTasks::class)
+        ->filterTable('snoozed', 'snoozed')
+        ->assertCanSeeTableRecords([$snoozed])
+        ->assertCanNotSeeTableRecords([$active]);
+});
+
+test('clearing the snooze filter shows both active and snoozed concerning tasks', function () {
+    $active = JiraIssue::factory()->for($this->user)->important()->create();
+    $snoozed = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+
+    livewire(ListConcerningTasks::class)
+        ->filterTable('snoozed', null)
+        ->assertCanSeeTableRecords([$active, $snoozed]);
+});
+
+test('the snooze filter is hidden on the full task list', function () {
+    livewire(ListConcerningTasks::class)
+        ->assertTableFilterVisible('snoozed');
+
+    livewire(ListJiraIssues::class)
+        ->assertTableFilterHidden('snoozed');
+});
+
 test('starring a task from the full list marks it important', function () {
     $issue = JiraIssue::factory()->for($this->user)->create(['is_important' => false]);
 

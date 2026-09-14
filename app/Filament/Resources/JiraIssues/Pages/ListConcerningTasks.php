@@ -20,11 +20,15 @@ class ListConcerningTasks extends ListRecords
     /**
      * Restrict the table to tasks that currently need the user's attention.
      *
+     * Snoozed tasks are hidden by the table's "Snooze" filter (which defaults to
+     * "Not snoozed"), so the base query stays snooze-agnostic to let that filter
+     * reveal snoozed tasks on demand.
+     *
      * @return Builder<JiraIssue>|null
      */
     protected function getTableQuery(): ?Builder
     {
-        return JiraIssueResource::getEloquentQuery()->concerningFor($this->currentUser());
+        return JiraIssueResource::getEloquentQuery()->concerning($this->currentUser());
     }
 
     private function currentUser(): User

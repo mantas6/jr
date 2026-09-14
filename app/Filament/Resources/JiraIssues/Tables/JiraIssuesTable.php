@@ -100,6 +100,19 @@ class JiraIssuesTable
 
                         return $query->where('sprints', 'like', '%'.json_encode($value).'%');
                     }),
+                SelectFilter::make('snoozed')
+                    ->label('Snooze')
+                    ->options([
+                        'active' => 'Not snoozed',
+                        'snoozed' => 'Snoozed',
+                    ])
+                    ->default('active')
+                    ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+                    ->query(fn (Builder $query, array $data): Builder => match ($data['value'] ?? null) {
+                        'active' => $query->notSnoozed(),
+                        'snoozed' => $query->snoozed(),
+                        default => $query,
+                    }),
             ])
             ->recordUrl(fn (JiraIssue $record): string => JiraIssueResource::getUrl('view', ['record' => $record]))
             ->defaultSort('jira_updated_at', 'desc')
