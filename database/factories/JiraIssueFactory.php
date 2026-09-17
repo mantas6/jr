@@ -93,6 +93,17 @@ class JiraIssueFactory extends Factory
     }
 
     /**
+     * Give the issue a snooze that has already expired (defaults to one hour ago),
+     * so it counts as no longer snoozed.
+     */
+    public function expiredSnooze(?DateTimeInterface $at = null): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'snoozed_until' => $at ?? now()->subHour(),
+        ]);
+    }
+
+    /**
      * Mark the issue as dismissed at the given time (defaults to now).
      */
     public function dismissed(?DateTimeInterface $at = null): static

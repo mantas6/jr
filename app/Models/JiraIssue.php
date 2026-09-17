@@ -95,6 +95,16 @@ class JiraIssue extends Model
     }
 
     /**
+     * Determine whether the issue is currently snoozed: it has a snooze time set
+     * and that time is still in the future. An expired snooze counts as not
+     * snoozed.
+     */
+    public function isSnoozed(): bool
+    {
+        return $this->snoozed_until !== null && $this->snoozed_until->isFuture();
+    }
+
+    /**
      * The user that owns the Jira issue.
      *
      * @return BelongsTo<User, $this>

@@ -129,7 +129,8 @@ class ViewJiraIssue extends ViewRecord
     }
 
     /**
-     * Snooze the issue for a chosen window.
+     * Snooze the issue for a chosen window. Hidden while the issue is already
+     * snoozed.
      */
     private function snoozeAction(): Action
     {
@@ -137,6 +138,7 @@ class ViewJiraIssue extends ViewRecord
             ->label('Snooze')
             ->icon(Heroicon::OutlinedClock)
             ->color('gray')
+            ->visible(fn (): bool => !$this->currentRecord()->isSnoozed())
             ->schema([
                 Select::make('duration')
                     ->label('Snooze until')
@@ -156,7 +158,8 @@ class ViewJiraIssue extends ViewRecord
     }
 
     /**
-     * Clear an active snooze on the issue.
+     * Clear an active snooze on the issue. Hidden unless the issue is currently
+     * snoozed; an expired snooze does not surface the action.
      */
     private function unsnoozeAction(): Action
     {
@@ -164,7 +167,7 @@ class ViewJiraIssue extends ViewRecord
             ->label('Un-snooze')
             ->icon(Heroicon::OutlinedBellSlash)
             ->color('gray')
-            ->visible(fn (): bool => filled($this->currentRecord()->snoozed_until))
+            ->visible(fn (): bool => $this->currentRecord()->isSnoozed())
             ->action(function (): void {
                 $this->currentRecord()->update(['snoozed_until' => null]);
 

@@ -404,7 +404,8 @@ class JiraIssuesTable
     }
 
     /**
-     * Snooze the task for a chosen window. Only on the concerning list.
+     * Snooze the task for a chosen window. Only on the concerning list, and only
+     * when the task is not already snoozed.
      */
     private static function snoozeAction(): Action
     {
@@ -412,7 +413,7 @@ class JiraIssuesTable
             ->icon(Heroicon::OutlinedClock)
             ->color('gray')
             ->iconButton()
-            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+            ->visible(fn (HasTable $livewire, JiraIssue $record): bool => $livewire instanceof ListConcerningTasks && !$record->isSnoozed())
             ->schema([
                 Select::make('duration')
                     ->label('Snooze until')
@@ -426,9 +427,10 @@ class JiraIssuesTable
     }
 
     /**
-     * Clear an active snooze. Shown wherever a snoozed task is visible; since a
-     * snoozed task is hidden from the concerning list, this surfaces on the full
-     * task list so the snooze can be lifted.
+     * Clear an active snooze. Shown only while a task is currently snoozed; an
+     * expired snooze does not surface the action. Since a snoozed task is hidden
+     * from the concerning list, this typically surfaces on the full task list so
+     * the snooze can be lifted.
      */
     private static function unsnoozeAction(): Action
     {
@@ -437,7 +439,7 @@ class JiraIssuesTable
             ->icon(Heroicon::OutlinedBellSlash)
             ->color('gray')
             ->iconButton()
-            ->visible(fn (JiraIssue $record): bool => filled($record->snoozed_until))
+            ->visible(fn (JiraIssue $record): bool => $record->isSnoozed())
             ->action(fn (JiraIssue $record) => $record->update(['snoozed_until' => null]));
     }
 

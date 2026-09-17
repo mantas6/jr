@@ -173,6 +173,25 @@ test('the un-snooze action is hidden when the task is not snoozed', function () 
         ->assertTableActionHidden('unsnooze', $issue);
 });
 
+test('an expired snooze hides the un-snooze action and shows the snooze action', function () {
+    $issue = JiraIssue::factory()->for($this->user)->important()->expiredSnooze()->create();
+
+    livewire(ListConcerningTasks::class)
+        ->assertCanSeeTableRecords([$issue])
+        ->assertTableActionVisible('snooze', $issue)
+        ->assertTableActionHidden('unsnooze', $issue);
+});
+
+test('an active snooze hides the snooze action and shows the un-snooze action', function () {
+    $issue = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+
+    livewire(ListConcerningTasks::class)
+        ->filterTable('snoozed', 'snoozed')
+        ->assertCanSeeTableRecords([$issue])
+        ->assertTableActionHidden('snooze', $issue)
+        ->assertTableActionVisible('unsnooze', $issue);
+});
+
 test('bulk starring marks every selected task important', function () {
     $issues = JiraIssue::factory()->for($this->user)->mentionsMe()->count(3)->create();
 

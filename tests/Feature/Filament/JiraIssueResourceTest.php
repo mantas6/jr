@@ -667,6 +667,32 @@ test('the view page un-snooze action is hidden when the task is not snoozed', fu
         ->assertActionHidden('unsnooze');
 });
 
+test('the view page un-snooze action is hidden when the snooze has expired', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->expiredSnooze()->create();
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertActionVisible('snooze')
+        ->assertActionHidden('unsnooze');
+});
+
+test('the view page snooze action is hidden while the task is snoozed', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create(['snoozed_until' => now()->addHour()]);
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertActionHidden('snooze')
+        ->assertActionVisible('unsnooze');
+});
+
 test('the view page can dismiss the task, which also unstars it', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
