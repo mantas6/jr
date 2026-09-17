@@ -10,6 +10,7 @@ use App\Services\Jira\ConcerningTasksExporter;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraIssueActions;
+use App\Services\Jira\JiraPriority;
 use App\Services\Jira\JiraTransitionsCache;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
@@ -31,22 +32,6 @@ use Illuminate\Support\Facades\Cache;
 
 class JiraIssuesTable
 {
-    /**
-     * Jira priorities keyed by name, with a sort rank (lower is more important)
-     * and badge color. Custom Jira priority names fall back to rank 6 / gray.
-     *
-     * @var array<string, array{rank: int, color: string}>
-     */
-    private const PRIORITIES = [
-        'Blocker' => ['rank' => 0, 'color' => 'danger'],
-        'Highest' => ['rank' => 1, 'color' => 'danger'],
-        'Critical' => ['rank' => 1, 'color' => 'warning'],
-        'High' => ['rank' => 2, 'color' => 'warning'],
-        'Medium' => ['rank' => 3, 'color' => 'primary'],
-        'Low' => ['rank' => 4, 'color' => 'success'],
-        'Lowest' => ['rank' => 5, 'color' => 'gray'],
-    ];
-
     public static function configure(Table $table): Table
     {
         return $table
@@ -80,7 +65,7 @@ class JiraIssuesTable
                     ->sortable(),
                 TextColumn::make('priority')
                     ->badge()
-                    ->color(fn (JiraIssue $record): string => self::priorityColor($record->priority))
+                    ->color(fn (JiraIssue $record): string => JiraPriority::color($record->priority))
                     ->sortable(query: fn (Builder $query, string $direction): Builder => self::orderByPriorityRank($query, $direction))
                     ->toggleable(),
                 TextColumn::make('sprints')
@@ -195,7 +180,7 @@ class JiraIssuesTable
      */
     public static function priorityColor(?string $priority): string
     {
-        return self::PRIORITIES[$priority]['color'] ?? 'gray';
+        return JiraPriority::color($priority);
     }
 
     /**
@@ -260,25 +245,19 @@ class JiraIssuesTable
 
     /**
      * Order a query by Jira priority importance (Highest first) rather than
-     * alphabetically, using a portable CASE expression. Unknown priorities sort
-     * last.
+     * alphabetically, using a portable CASE expression that tolerates custom
+     * priority names. Unknown priorities sort last.
      *
      * @param  Builder<JiraIssue>  $query
      * @return Builder<JiraIssue>
      */
     private static function orderByPriorityRank(Builder $query, string $direction): Builder
     {
-        $cases = '';
-
-        foreach (self::PRIORITIES as $meta) {
-            $cases .= ' WHEN ? THEN '.$meta['rank'];
-        }
-
-        $unknownRank = 6;
+        [$expression, $bindings] = JiraPriority::rankCaseExpression('priority');
 
         return $query->orderByRaw(
-            "CASE priority{$cases} ELSE {$unknownRank} END ".($direction === 'desc' ? 'desc' : 'asc'),
-            array_keys(self::PRIORITIES),
+            $expression.' '.($direction === 'desc' ? 'desc' : 'asc'),
+            $bindings,
         );
     }
 

@@ -972,6 +972,23 @@ test('sorting by priority orders by Jira importance, most important first', func
         ->assertCanSeeTableRecords([$low, $medium, $highest], inOrder: true);
 });
 
+test('sorting by priority orders custom P-prefixed priority names by importance', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $low = JiraIssue::factory()->for($user)->create(['priority' => 'P4 - Low']);
+    $highest = JiraIssue::factory()->for($user)->create(['priority' => 'P1 - Highest']);
+    $medium = JiraIssue::factory()->for($user)->create(['priority' => 'P3 - Medium']);
+
+    livewire(ListJiraIssues::class)
+        ->sortTable('priority', 'asc')
+        ->assertCanSeeTableRecords([$highest, $medium, $low], inOrder: true)
+        ->sortTable('priority', 'desc')
+        ->assertCanSeeTableRecords([$low, $medium, $highest], inOrder: true);
+});
+
 test('sorting by assignee orders alphabetically', function () {
     Http::fake();
 

@@ -8,6 +8,7 @@ use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
+use App\Services\Jira\JiraPriority;
 use App\Services\Jira\JiraTextToAdf;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
@@ -46,7 +47,7 @@ class JiraIssueInfolist
                             ->color(fn (JiraIssue $record): string => self::statusColor($record->status_category)),
                         TextEntry::make('priority')
                             ->badge()
-                            ->color(fn (JiraIssue $record): string => JiraIssuesTable::priorityColor($record->priority))
+                            ->color(fn (JiraIssue $record): string => JiraPriority::color($record->priority))
                             ->placeholder('—'),
                         TextEntry::make('assignee_name')
                             ->label('Assignee')
