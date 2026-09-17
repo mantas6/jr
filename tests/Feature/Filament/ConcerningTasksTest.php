@@ -67,17 +67,19 @@ test('the snooze filter is hidden on the full task list', function () {
         ->assertTableFilterHidden('snoozed');
 });
 
-test('the not-closed filter hides Done tasks by default on the concerning page', function () {
+test('the not-closed filter is off by default on the concerning page but can hide Done tasks', function () {
     $open = JiraIssue::factory()->for($this->user)->important()->create();
     $done = JiraIssue::factory()->for($this->user)->important()->done()->create();
 
+    // The concerning list surfaces tasks that need attention regardless of status,
+    // so Done tasks stay visible until the filter is applied by hand.
     livewire(ListConcerningTasks::class)
-        ->assertCanSeeTableRecords([$open])
-        ->assertCanNotSeeTableRecords([$done]);
+        ->assertCanSeeTableRecords([$open, $done]);
 
     livewire(ListConcerningTasks::class)
-        ->filterTable('open', false)
-        ->assertCanSeeTableRecords([$open, $done]);
+        ->filterTable('open', true)
+        ->assertCanSeeTableRecords([$open])
+        ->assertCanNotSeeTableRecords([$done]);
 });
 
 test('the current-sprint filter shows only active-sprint tasks on the concerning page', function () {

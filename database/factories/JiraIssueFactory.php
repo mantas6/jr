@@ -20,7 +20,8 @@ class JiraIssueFactory extends Factory
     public function definition(): array
     {
         // Default to an open status category so records stay visible under the
-        // table's default-on "Not closed" filter. Use the done() state for Done.
+        // full task list's default-on "Not closed" filter. Use the done() state
+        // for Done.
         $statusCategory = fake()->randomElement(['To Do', 'In Progress']);
         $status = $statusCategory;
 

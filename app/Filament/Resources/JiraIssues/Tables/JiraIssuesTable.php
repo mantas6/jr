@@ -129,7 +129,7 @@ class JiraIssuesTable
                     }),
                 Filter::make('open')
                     ->label('Not closed')
-                    ->default()
+                    ->default(fn (HasTable $livewire): bool => !$livewire instanceof ListConcerningTasks)
                     ->query(fn (Builder $query): Builder => $query->whereRaw('lower(status_category) != ?', ['done'])),
                 Filter::make('in_active_sprint')
                     ->label('Current sprint')
