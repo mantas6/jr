@@ -6,6 +6,7 @@ use App\Filament\Resources\JiraIssues\Pages\ListJiraIssues;
 use App\Models\JiraIssue;
 use App\Models\User;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
@@ -276,13 +277,37 @@ test('bulk dismissing stamps, unstars, and clears the pin on every selected task
         ->and($issue->fresh()->concerning_since)->toBeNull();
 });
 
+test('bulk exporting downloads the selected tasks as a text file', function () {
+    $this->travelTo(Carbon::parse('2026-02-01 09:00:00'));
+
+    // The table sorts by jira_updated_at desc, so the newer task exports first.
+    $a = JiraIssue::factory()->for($this->user)->important()->create([
+        'jira_url' => 'https://site.atlassian.net/browse/PROJ-1',
+        'summary' => 'First task',
+        'jira_updated_at' => now(),
+    ]);
+    $b = JiraIssue::factory()->for($this->user)->important()->create([
+        'jira_url' => 'https://site.atlassian.net/browse/PROJ-2',
+        'summary' => 'Second task',
+        'jira_updated_at' => now()->subMinute(),
+    ]);
+
+    $expected = "https://site.atlassian.net/browse/PROJ-1\nFirst task\n\n".
+        "https://site.atlassian.net/browse/PROJ-2\nSecond task\n";
+
+    livewire(ListConcerningTasks::class)
+        ->callTableBulkAction('bulkExport', [$a, $b])
+        ->assertFileDownloaded('concerning-tasks-2026-02-01.txt', $expected, 'text/plain; charset=UTF-8');
+});
+
 test('the bulk actions are hidden on the full task list', function () {
     JiraIssue::factory()->for($this->user)->important()->create();
 
     livewire(ListJiraIssues::class)
         ->assertTableBulkActionHidden('bulkStar')
         ->assertTableBulkActionHidden('bulkSnooze')
-        ->assertTableBulkActionHidden('bulkDismiss');
+        ->assertTableBulkActionHidden('bulkDismiss')
+        ->assertTableBulkActionHidden('bulkExport');
 });
 
 test('the resource registers two navigation items with concerning tasks on top', function () {

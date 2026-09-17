@@ -6,6 +6,7 @@ use App\Filament\Resources\JiraIssues\JiraIssueResource;
 use App\Filament\Resources\JiraIssues\Pages\ListConcerningTasks;
 use App\Models\JiraIssue;
 use App\Models\User;
+use App\Services\Jira\ConcerningTasksExporter;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraIssueActions;
@@ -160,6 +161,7 @@ class JiraIssuesTable
                 self::bulkStarAction(),
                 self::bulkSnoozeAction(),
                 self::bulkDismissAction(),
+                self::bulkExportAction(),
             ])
             ->poll('30s');
     }
@@ -564,6 +566,25 @@ class JiraIssuesTable
                 'is_important' => false,
                 'concerning_since' => null,
             ]))
+            ->deselectRecordsAfterCompletion();
+    }
+
+    /**
+     * Bulk export the selected tasks as a plain-text file download, one Jira link
+     * and summary per task. Only on the concerning list.
+     */
+    private static function bulkExportAction(): BulkAction
+    {
+        return BulkAction::make('bulkExport')
+            ->label('Export')
+            ->icon(Heroicon::OutlinedArrowDownTray)
+            ->color('gray')
+            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+            ->action(fn (Collection $records) => response()->streamDownload(
+                fn () => print (ConcerningTasksExporter::toText($records)),
+                'concerning-tasks-'.now()->format('Y-m-d').'.txt',
+                ['Content-Type' => 'text/plain; charset=UTF-8'],
+            ))
             ->deselectRecordsAfterCompletion();
     }
 
