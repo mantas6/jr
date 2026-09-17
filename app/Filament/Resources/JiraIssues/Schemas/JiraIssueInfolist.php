@@ -34,6 +34,7 @@ class JiraIssueInfolist
                             ->color(fn (JiraIssue $record): string => self::statusColor($record->status_category)),
                         TextEntry::make('priority')
                             ->badge()
+                            ->color(fn (JiraIssue $record): string => JiraIssuesTable::priorityColor($record->priority))
                             ->placeholder('—'),
                         TextEntry::make('assignee_name')
                             ->label('Assignee')

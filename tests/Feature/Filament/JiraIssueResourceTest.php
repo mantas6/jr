@@ -3,6 +3,7 @@
 use App\Filament\Resources\JiraIssues\JiraIssueResource;
 use App\Filament\Resources\JiraIssues\Pages\ListJiraIssues;
 use App\Filament\Resources\JiraIssues\Pages\ViewJiraIssue;
+use App\Filament\Resources\JiraIssues\Tables\JiraIssuesTable;
 use App\Jobs\SyncJiraIssuesJob;
 use App\Models\JiraIssue;
 use App\Models\User;
@@ -779,6 +780,95 @@ test('sorting the jira updated column orders by the underlying date, not the hum
     livewire(ListJiraIssues::class)
         ->sortTable('jira_updated_at', 'asc')
         ->assertCanSeeTableRecords([$oldest, $middle, $newest], inOrder: true);
+});
+
+test('the assignee column is bold when the task is assigned to me', function () {
+    Http::fake();
+
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+    $this->actingAs($user);
+
+    $mine = JiraIssue::factory()->for($user)->create([
+        'assignee_account_id' => 'acc-me',
+        'assignee_name' => 'Me McGee',
+    ]);
+
+    livewire(ListJiraIssues::class)
+        ->assertCanSeeTableRecords([$mine])
+        ->assertSee('Me McGee')
+        ->assertSeeHtml('fi-font-bold');
+});
+
+test('the assignee column is not bold when the task is assigned to someone else', function () {
+    Http::fake();
+
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+    $this->actingAs($user);
+
+    JiraIssue::factory()->for($user)->create([
+        'assignee_account_id' => 'acc-other',
+        'assignee_name' => 'Otto Otherman',
+    ]);
+
+    livewire(ListJiraIssues::class)
+        ->assertSee('Otto Otherman')
+        ->assertDontSeeHtml('fi-font-bold');
+});
+
+test('the priority badge color maps Jira priority names to semantic colors', function () {
+    expect(JiraIssuesTable::priorityColor('Highest'))->toBe('danger')
+        ->and(JiraIssuesTable::priorityColor('Blocker'))->toBe('danger')
+        ->and(JiraIssuesTable::priorityColor('High'))->toBe('warning')
+        ->and(JiraIssuesTable::priorityColor('Critical'))->toBe('warning')
+        ->and(JiraIssuesTable::priorityColor('Medium'))->toBe('primary')
+        ->and(JiraIssuesTable::priorityColor('Low'))->toBe('success')
+        ->and(JiraIssuesTable::priorityColor('Lowest'))->toBe('gray')
+        ->and(JiraIssuesTable::priorityColor('Wibble'))->toBe('gray')
+        ->and(JiraIssuesTable::priorityColor(null))->toBe('gray');
+});
+
+test('the priority column is visible by default', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    JiraIssue::factory()->for($user)->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertCanRenderTableColumn('priority');
+});
+
+test('sorting by priority orders by Jira importance, most important first', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $low = JiraIssue::factory()->for($user)->create(['priority' => 'Low']);
+    $highest = JiraIssue::factory()->for($user)->create(['priority' => 'Highest']);
+    $medium = JiraIssue::factory()->for($user)->create(['priority' => 'Medium']);
+
+    livewire(ListJiraIssues::class)
+        ->sortTable('priority', 'asc')
+        ->assertCanSeeTableRecords([$highest, $medium, $low], inOrder: true)
+        ->sortTable('priority', 'desc')
+        ->assertCanSeeTableRecords([$low, $medium, $highest], inOrder: true);
+});
+
+test('sorting by assignee orders alphabetically', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $charlie = JiraIssue::factory()->for($user)->create(['assignee_name' => 'Charlie']);
+    $alice = JiraIssue::factory()->for($user)->create(['assignee_name' => 'Alice']);
+    $bob = JiraIssue::factory()->for($user)->create(['assignee_name' => 'Bob']);
+
+    livewire(ListJiraIssues::class)
+        ->sortTable('assignee_name', 'asc')
+        ->assertCanSeeTableRecords([$alice, $bob, $charlie], inOrder: true);
 });
 
 test('the status line shows the last sync time when connected', function () {

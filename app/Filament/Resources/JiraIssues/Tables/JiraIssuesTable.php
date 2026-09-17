@@ -17,6 +17,7 @@ use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
+use Filament\Support\Enums\FontWeight;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Contracts\HasTable;
@@ -30,6 +31,22 @@ use Illuminate\Support\Facades\Cache;
 
 class JiraIssuesTable
 {
+    /**
+     * Jira priorities keyed by name, with a sort rank (lower is more important)
+     * and badge color. Custom Jira priority names fall back to rank 6 / gray.
+     *
+     * @var array<string, array{rank: int, color: string}>
+     */
+    private const PRIORITIES = [
+        'Blocker' => ['rank' => 0, 'color' => 'danger'],
+        'Highest' => ['rank' => 1, 'color' => 'danger'],
+        'Critical' => ['rank' => 1, 'color' => 'warning'],
+        'High' => ['rank' => 2, 'color' => 'warning'],
+        'Medium' => ['rank' => 3, 'color' => 'primary'],
+        'Low' => ['rank' => 4, 'color' => 'success'],
+        'Lowest' => ['rank' => 5, 'color' => 'gray'],
+    ];
+
     public static function configure(Table $table): Table
     {
         return $table
@@ -58,9 +75,14 @@ class JiraIssuesTable
                     ->color(fn (JiraIssue $record): string => self::statusColor($record->status_category)),
                 TextColumn::make('assignee_name')
                     ->label('Assignee')
-                    ->placeholder('Unassigned'),
+                    ->placeholder('Unassigned')
+                    ->weight(fn (JiraIssue $record): ?FontWeight => self::isAssignedToCurrentUser($record) ? FontWeight::Bold : null)
+                    ->sortable(),
                 TextColumn::make('priority')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->badge()
+                    ->color(fn (JiraIssue $record): string => self::priorityColor($record->priority))
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => self::orderByPriorityRank($query, $direction))
+                    ->toggleable(),
                 TextColumn::make('sprints')
                     ->label('Sprint')
                     ->badge()
@@ -195,6 +217,15 @@ class JiraIssuesTable
     }
 
     /**
+     * Map a Jira priority name to a badge color. Unknown/custom priorities
+     * fall back to gray.
+     */
+    public static function priorityColor(?string $priority): string
+    {
+        return self::PRIORITIES[$priority]['color'] ?? 'gray';
+    }
+
+    /**
      * Modal action to change the status and/or assignee in one step, with an
      * optional dismiss toggle that clears the task once the update lands. Shared
      * by the task lists (as an icon button) and the single-task view page.
@@ -252,6 +283,41 @@ class JiraIssuesTable
 
                 Notification::make()->success()->title('Task updated')->send();
             });
+    }
+
+    /**
+     * Order a query by Jira priority importance (Highest first) rather than
+     * alphabetically, using a portable CASE expression. Unknown priorities sort
+     * last.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    private static function orderByPriorityRank(Builder $query, string $direction): Builder
+    {
+        $cases = '';
+
+        foreach (self::PRIORITIES as $meta) {
+            $cases .= ' WHEN ? THEN '.$meta['rank'];
+        }
+
+        $unknownRank = 6;
+
+        return $query->orderByRaw(
+            "CASE priority{$cases} ELSE {$unknownRank} END ".($direction === 'desc' ? 'desc' : 'asc'),
+            array_keys(self::PRIORITIES),
+        );
+    }
+
+    /**
+     * Whether the given issue is assigned to the currently authenticated user's
+     * Jira identity.
+     */
+    private static function isAssignedToCurrentUser(JiraIssue $record): bool
+    {
+        $jiraAccountId = self::user()->jira_account_id;
+
+        return filled($jiraAccountId) && $record->assignee_account_id === $jiraAccountId;
     }
 
     /**
