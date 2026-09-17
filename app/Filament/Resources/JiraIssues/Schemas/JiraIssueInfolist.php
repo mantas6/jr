@@ -5,12 +5,17 @@ namespace App\Filament\Resources\JiraIssues\Schemas;
 use App\Filament\Resources\JiraIssues\Pages\ViewJiraIssue;
 use App\Filament\Resources\JiraIssues\Tables\JiraIssuesTable;
 use App\Models\JiraIssue;
+use Filament\Actions\Action;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Js;
 
 class JiraIssueInfolist
 {
@@ -75,6 +80,11 @@ class JiraIssueInfolist
                             ->components([
                                 Section::make('Description')
                                     ->columnSpanFull()
+                                    ->afterHeader([
+                                        self::copyMarkdownAction('copyDescriptionMarkdown')
+                                            ->visible(fn (ViewJiraIssue $livewire): bool => $livewire->descriptionMarkdown() !== null)
+                                            ->alpineClickHandler(fn (ViewJiraIssue $livewire): string => self::copyMarkdownScript((string) $livewire->descriptionMarkdown())),
+                                    ])
                                     ->schema([
                                         TextEntry::make('description')
                                             ->hiddenLabel()
@@ -113,6 +123,11 @@ class JiraIssueInfolist
                                                     ->html()
                                                     ->prose()
                                                     ->columnSpanFull(),
+                                                Actions::make([
+                                                    self::copyMarkdownAction('copyCommentMarkdown')
+                                                        ->alpineClickHandler(fn (Get $get): string => self::copyMarkdownScript((string) $get('markdown'))),
+                                                ])
+                                                    ->columnSpanFull(),
                                             ])
                                             ->columns(1),
                                     ]),
@@ -120,6 +135,30 @@ class JiraIssueInfolist
                             ->deferLoading(),
                     ),
             ]);
+    }
+
+    /**
+     * Build a small "Copy as Markdown" link action. The click handler is
+     * attached by the caller so it can source the correct Markdown string.
+     */
+    private static function copyMarkdownAction(string $name): Action
+    {
+        return Action::make($name)
+            ->label('Copy as Markdown')
+            ->icon(Heroicon::OutlinedClipboardDocument)
+            ->color('gray')
+            ->size('sm')
+            ->link();
+    }
+
+    /**
+     * Build the Alpine click handler that copies the given Markdown to the
+     * clipboard and shows a "Copied" tooltip, mirroring how Filament wires up
+     * its own copyable actions.
+     */
+    private static function copyMarkdownScript(string $markdown): string
+    {
+        return 'window.navigator.clipboard.writeText('.Js::from($markdown).'); $tooltip('.Js::from('Copied').', { theme: $store.theme })';
     }
 
     /**

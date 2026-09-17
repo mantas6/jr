@@ -517,6 +517,67 @@ test('the view page renders the live description and comments from jira', functi
     Http::assertSentCount(1);
 });
 
+test('the view page renders copy-as-markdown buttons with the embedded markdown', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-71',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-71*' => Http::response([
+            'renderedFields' => [
+                'description' => '<p>Ship the release today.</p>',
+                'comment' => [
+                    'comments' => [
+                        ['body' => '<p>Approved to merge.</p>'],
+                    ],
+                ],
+            ],
+            'fields' => [
+                'description' => [
+                    'type' => 'doc',
+                    'content' => [
+                        ['type' => 'paragraph', 'content' => [
+                            ['type' => 'text', 'text' => 'Ship the release today.'],
+                        ]],
+                    ],
+                ],
+                'comment' => [
+                    'comments' => [
+                        [
+                            'author' => ['displayName' => 'Carol Commenter'],
+                            'created' => '2024-03-01T08:00:00.000+0000',
+                            'body' => [
+                                'type' => 'doc',
+                                'content' => [
+                                    ['type' => 'paragraph', 'content' => [
+                                        ['type' => 'text', 'text' => 'Approved to merge.'],
+                                    ]],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]),
+    ]);
+
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertOk()
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    $partial = $component->effects['partials']['schema.infolist.jiraContent'];
+
+    expect($partial)
+        ->toContain('Copy as Markdown')
+        ->toContain('Ship the release today.')
+        ->toContain('Approved to merge.');
+});
+
 test('the view page loads without a jira connection and shows content placeholders', function () {
     $user = User::factory()->create();
     $this->actingAs($user);

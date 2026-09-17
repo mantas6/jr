@@ -20,13 +20,17 @@ class JiraIssueContentMapper
      * @param  array<string, mixed>  $payload
      * @return array{
      *     description: string|null,
-     *     comments: list<array{author: string, created: CarbonInterface|null, body: string}>,
+     *     descriptionMarkdown: string|null,
+     *     comments: list<array{author: string, created: CarbonInterface|null, body: string, markdown: string}>,
      * }
      */
     public static function map(array $payload, ?string $jiraSiteUrl = null): array
     {
+        $description = self::nullableHtml(data_get($payload, 'renderedFields.description'), $jiraSiteUrl);
+
         return [
-            'description' => self::nullableHtml(data_get($payload, 'renderedFields.description'), $jiraSiteUrl),
+            'description' => $description,
+            'descriptionMarkdown' => self::markdown(data_get($payload, 'fields.description'), $description),
             'comments' => self::mapComments($payload, $jiraSiteUrl),
         ];
     }
@@ -36,7 +40,7 @@ class JiraIssueContentMapper
      * newest to oldest (Jira returns them oldest first).
      *
      * @param  array<string, mixed>  $payload
-     * @return list<array{author: string, created: CarbonInterface|null, body: string}>
+     * @return list<array{author: string, created: CarbonInterface|null, body: string, markdown: string}>
      */
     private static function mapComments(array $payload, ?string $jiraSiteUrl = null): array
     {
@@ -56,17 +60,37 @@ class JiraIssueContentMapper
                 continue;
             }
 
+            $body = JiraAttachmentProxy::rewriteHtml(
+                (string) data_get($rendered[$index] ?? [], 'body', ''),
+                $jiraSiteUrl,
+            );
+
             $comments[] = [
                 'author' => (string) data_get($comment, 'author.displayName', 'Unknown'),
                 'created' => self::parseDate(data_get($comment, 'created')),
-                'body' => JiraAttachmentProxy::rewriteHtml(
-                    (string) data_get($rendered[$index] ?? [], 'body', ''),
-                    $jiraSiteUrl,
-                ),
+                'body' => $body,
+                'markdown' => (string) self::markdown(data_get($comment, 'body'), $body),
             ];
         }
 
         return array_reverse($comments);
+    }
+
+    /**
+     * Convert an ADF document to Markdown, falling back to the plain text of
+     * the rendered HTML when the raw ADF is missing or not an array.
+     */
+    private static function markdown(mixed $adf, ?string $renderedHtml): ?string
+    {
+        if (is_array($adf)) {
+            return JiraAdfToMarkdown::convert($adf);
+        }
+
+        if (!is_string($renderedHtml) || mb_trim($renderedHtml) === '') {
+            return null;
+        }
+
+        return mb_trim(html_entity_decode(strip_tags($renderedHtml), ENT_QUOTES | ENT_HTML5));
     }
 
     /**

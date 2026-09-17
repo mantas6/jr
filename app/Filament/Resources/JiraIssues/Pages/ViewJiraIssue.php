@@ -24,7 +24,7 @@ class ViewJiraIssue extends ViewRecord
     /**
      * The issue's description and comments, fetched live from Jira.
      *
-     * @var array{description: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string}>}|null
+     * @var array{description: string|null, descriptionMarkdown: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string, markdown: string}>}|null
      */
     private ?array $issueContent = null;
 
@@ -45,9 +45,17 @@ class ViewJiraIssue extends ViewRecord
     }
 
     /**
+     * The issue's description as Markdown, or null when the issue has none.
+     */
+    public function descriptionMarkdown(): ?string
+    {
+        return $this->issueContent()['descriptionMarkdown'];
+    }
+
+    /**
      * The issue's comments, ordered newest to oldest.
      *
-     * @return list<array{author: string, created: CarbonInterface|null, body: string}>
+     * @return list<array{author: string, created: CarbonInterface|null, body: string, markdown: string}>
      */
     public function comments(): array
     {
@@ -73,7 +81,7 @@ class ViewJiraIssue extends ViewRecord
      * Fetch (and memoize) the issue's description and comments from Jira so a
      * single API call feeds both the description and comments sections.
      *
-     * @return array{description: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string}>}
+     * @return array{description: string|null, descriptionMarkdown: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string, markdown: string}>}
      */
     private function issueContent(): array
     {
@@ -84,7 +92,7 @@ class ViewJiraIssue extends ViewRecord
         $user = $this->currentUser();
 
         if (!$user->hasJiraConnection()) {
-            return $this->issueContent = ['description' => null, 'comments' => []];
+            return $this->issueContent = ['description' => null, 'descriptionMarkdown' => null, 'comments' => []];
         }
 
         try {
@@ -92,7 +100,7 @@ class ViewJiraIssue extends ViewRecord
 
             return $this->issueContent = JiraIssueContentMapper::map($payload, $user->jira_site_url);
         } catch (JiraApiException) {
-            return $this->issueContent = ['description' => null, 'comments' => []];
+            return $this->issueContent = ['description' => null, 'descriptionMarkdown' => null, 'comments' => []];
         }
     }
 
