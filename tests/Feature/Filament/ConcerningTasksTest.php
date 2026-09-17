@@ -5,6 +5,7 @@ use App\Filament\Resources\JiraIssues\Pages\ListConcerningTasks;
 use App\Filament\Resources\JiraIssues\Pages\ListJiraIssues;
 use App\Models\JiraIssue;
 use App\Models\User;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
@@ -312,4 +313,130 @@ test('the concerning page shows the last sync time when connected', function () 
 
     livewire(ListConcerningTasks::class)
         ->assertSee('Last synced');
+});
+
+/**
+ * Build a minimal single-issue Jira payload for the given key.
+ *
+ * @return array<string, mixed>
+ */
+function addTasksPayload(string $key): array
+{
+    return [
+        'id' => (string) fake()->unique()->numberBetween(50000, 99999),
+        'key' => $key,
+        'fields' => [
+            'summary' => "Summary for {$key}",
+            'status' => [
+                'id' => '1',
+                'name' => 'To Do',
+                'statusCategory' => ['name' => 'To Do'],
+            ],
+            'issuetype' => ['name' => 'Task'],
+            'priority' => ['name' => 'Medium'],
+            'assignee' => null,
+            'reporter' => ['displayName' => 'Reporter'],
+            'created' => '2024-01-01T00:00:00.000+0000',
+            'updated' => '2024-02-01T00:00:00.000+0000',
+        ],
+    ];
+}
+
+test('the add-tasks action is disabled without a Jira connection', function () {
+    livewire(ListConcerningTasks::class)
+        ->assertActionDisabled('addTasks');
+});
+
+test('adding a new key fetches it from Jira and pins it to the concerning list', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
+    $this->actingAs($user);
+
+    // Reset the shared beforeEach catch-all fake so the specific stub takes effect.
+    Http::swap(new Factory());
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-500*' => Http::response(addTasksPayload('PROJ-500')),
+    ]);
+
+    livewire(ListConcerningTasks::class)
+        ->callAction('addTasks', data: ['tasks' => 'https://example.atlassian.net/browse/PROJ-500'])
+        ->assertHasNoFormErrors()
+        ->assertNotified();
+
+    $issue = JiraIssue::query()->where('user_id', $user->id)->where('jira_key', 'PROJ-500')->first();
+
+    expect($issue)->not->toBeNull()
+        ->and($issue->concerning_since)->not->toBeNull();
+
+    livewire(ListConcerningTasks::class)
+        ->assertCanSeeTableRecords([$issue]);
+});
+
+test('adding an existing key re-surfaces it without contacting Jira', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-1',
+        'concerning_since' => null,
+        'dismissed_at' => now()->subDay(),
+        'snoozed_until' => now()->addDay(),
+    ]);
+
+    Http::fake();
+
+    livewire(ListConcerningTasks::class)
+        ->callAction('addTasks', data: ['tasks' => 'PROJ-1'])
+        ->assertHasNoFormErrors()
+        ->assertNotified();
+
+    $issue->refresh();
+
+    expect($issue->concerning_since)->not->toBeNull()
+        ->and($issue->dismissed_at)->toBeNull()
+        ->and($issue->snoozed_until)->toBeNull();
+
+    Http::assertNotSent(fn ($request): bool => str_contains($request->url(), '/rest/api/3/issue/'));
+});
+
+test('a not-found key is reported as failed while valid keys are still added', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
+    $this->actingAs($user);
+
+    // Reset the shared beforeEach catch-all fake so the specific stubs take effect.
+    Http::swap(new Factory());
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-404*' => Http::response(['errorMessages' => ['Issue does not exist']], 404),
+        '*/rest/api/3/issue/PROJ-200*' => Http::response(addTasksPayload('PROJ-200')),
+    ]);
+
+    livewire(ListConcerningTasks::class)
+        ->callAction('addTasks', data: ['tasks' => "PROJ-200\nPROJ-404"])
+        ->assertHasNoFormErrors()
+        ->assertNotified();
+
+    expect(JiraIssue::query()->where('user_id', $user->id)->where('jira_key', 'PROJ-200')->exists())->toBeTrue()
+        ->and(JiraIssue::query()->where('user_id', $user->id)->where('jira_key', 'PROJ-404')->exists())->toBeFalse();
+});
+
+test('submitting the add-tasks form without input shows a validation error', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
+    $this->actingAs($user);
+
+    livewire(ListConcerningTasks::class)
+        ->callAction('addTasks', data: ['tasks' => ''])
+        ->assertHasFormErrors(['tasks' => 'required']);
+});
+
+test('garbage input adds nothing and warns that no keys were found', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
+    $this->actingAs($user);
+
+    Http::fake();
+
+    livewire(ListConcerningTasks::class)
+        ->callAction('addTasks', data: ['tasks' => 'just some words'])
+        ->assertActionHalted('addTasks')
+        ->assertNotified();
+
+    expect(JiraIssue::query()->where('user_id', $user->id)->count())->toBe(0);
 });

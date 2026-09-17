@@ -80,6 +80,60 @@ final class JiraIssueActions
     }
 
     /**
+     * Add the given Jira keys to the user's concerning list.
+     *
+     * Existing rows are re-surfaced (their concerning pin is set, and any
+     * dismissal/snooze is cleared) without hitting Jira. Unknown keys are fetched
+     * from Jira, mapped, and created as pinned tasks. A per-key Jira failure is
+     * recorded and does not abort the batch.
+     *
+     * @param  list<string>  $keys
+     * @return array{added: list<string>, existing: list<string>, failed: array<string, string>}
+     */
+    public function addConcerning(array $keys): array
+    {
+        $added = [];
+        $existing = [];
+        $failed = [];
+
+        foreach ($keys as $key) {
+            $issue = JiraIssue::query()
+                ->where('user_id', $this->user->id)
+                ->where('jira_key', $key)
+                ->first();
+
+            if ($issue !== null) {
+                $issue->update([
+                    'concerning_since' => $issue->concerning_since ?? Carbon::now(),
+                    'dismissed_at' => null,
+                    'snoozed_until' => null,
+                ]);
+
+                $existing[] = $key;
+
+                continue;
+            }
+
+            try {
+                $payload = $this->client->getIssue($key);
+            } catch (JiraApiException $exception) {
+                $failed[$key] = $exception->getMessage();
+
+                continue;
+            }
+
+            $attributes = JiraIssueMapper::map($payload, $this->user, Carbon::now());
+            $attributes['concerning_since'] = Carbon::now();
+
+            JiraIssue::create($attributes);
+
+            $added[] = $key;
+        }
+
+        return ['added' => $added, 'existing' => $existing, 'failed' => $failed];
+    }
+
+    /**
      * Re-fetch the issue from Jira and update the local row from the mapped payload.
      */
     private function refresh(JiraIssue $issue): JiraIssue

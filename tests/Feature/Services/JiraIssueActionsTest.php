@@ -177,6 +177,63 @@ test('refreshing a snoozed issue preserves the snooze when jira updated timestam
         ->toBe($snoozedUntil->toDateTimeString());
 });
 
+test('addConcerning re-surfaces an existing task without contacting jira', function () {
+    $user = User::factory()->withJiraConnection()->create();
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-20',
+        'concerning_since' => null,
+        'dismissed_at' => now()->subDay(),
+        'snoozed_until' => now()->addDay(),
+    ]);
+
+    Http::fake();
+
+    $result = JiraIssueActions::forUser($user)->addConcerning(['PROJ-20']);
+
+    expect($result['existing'])->toBe(['PROJ-20'])
+        ->and($result['added'])->toBe([])
+        ->and($result['failed'])->toBe([]);
+
+    expect($issue->fresh()->concerning_since)->not->toBeNull()
+        ->and($issue->fresh()->dismissed_at)->toBeNull()
+        ->and($issue->fresh()->snoozed_until)->toBeNull();
+
+    Http::assertNothingSent();
+});
+
+test('addConcerning fetches and creates an unknown task pinned to the list', function () {
+    $user = User::factory()->withJiraConnection()->create();
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-21*' => Http::response(issuePayload('PROJ-21')),
+    ]);
+
+    $result = JiraIssueActions::forUser($user)->addConcerning(['PROJ-21']);
+
+    expect($result['added'])->toBe(['PROJ-21']);
+
+    $issue = JiraIssue::query()->where('user_id', $user->id)->where('jira_key', 'PROJ-21')->first();
+
+    expect($issue)->not->toBeNull()
+        ->and($issue->concerning_since)->not->toBeNull();
+});
+
+test('addConcerning records a per-key failure without aborting the batch', function () {
+    $user = User::factory()->withJiraConnection()->create();
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-404*' => Http::response(['errorMessages' => ['Nope']], 404),
+        '*/rest/api/3/issue/PROJ-22*' => Http::response(issuePayload('PROJ-22')),
+    ]);
+
+    $result = JiraIssueActions::forUser($user)->addConcerning(['PROJ-22', 'PROJ-404']);
+
+    expect($result['added'])->toBe(['PROJ-22'])
+        ->and($result['failed'])->toHaveKey('PROJ-404');
+
+    expect(JiraIssue::query()->where('user_id', $user->id)->where('jira_key', 'PROJ-404')->exists())->toBeFalse();
+});
+
 test('assign failure throws and leaves the row unchanged', function () {
     $user = User::factory()->withJiraConnection()->create();
     $issue = JiraIssue::factory()->for($user)->create([
