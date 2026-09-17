@@ -34,6 +34,7 @@ class JiraIssueMapper
      *     assignee_name: string|null,
      *     reporter_name: string|null,
      *     sprints: list<string>|null,
+     *     in_active_sprint: bool|null,
      *     jira_url: string,
      *     jira_created_at: CarbonInterface|null,
      *     jira_updated_at: CarbonInterface|null,
@@ -63,6 +64,7 @@ class JiraIssueMapper
             'assignee_name' => self::nullableString(data_get($fields, 'assignee.displayName')),
             'reporter_name' => self::nullableString(data_get($fields, 'reporter.displayName')),
             'sprints' => $sprintFieldId !== null ? self::extractSprintNames(data_get($fields, $sprintFieldId)) : null,
+            'in_active_sprint' => $sprintFieldId !== null ? self::hasActiveSprint(data_get($fields, $sprintFieldId)) : null,
             'jira_url' => mb_rtrim((string) $user->jira_site_url, '/').'/browse/'.$key,
             'jira_created_at' => self::parseDate(data_get($fields, 'created')),
             'jira_updated_at' => self::parseDate(data_get($fields, 'updated')),
@@ -86,6 +88,7 @@ class JiraIssueMapper
         $row = self::map($issue, $user, $syncedAt, $sprintFieldId);
 
         $row['sprints'] = $row['sprints'] === null ? null : json_encode($row['sprints']);
+        $row['in_active_sprint'] = $row['in_active_sprint'] === null ? null : (int) $row['in_active_sprint'];
         $row['raw'] = json_encode($row['raw']);
         $row['jira_created_at'] = $row['jira_created_at']?->format('Y-m-d H:i:s');
         $row['jira_updated_at'] = $row['jira_updated_at']?->format('Y-m-d H:i:s');
@@ -141,5 +144,31 @@ class JiraIssueMapper
         }
 
         return $names === [] ? null : $names;
+    }
+
+    /**
+     * Determine whether any sprint on a Jira Sprint custom field value is active.
+     *
+     * Jira marks the current sprint with `state` of `active` (modern array form)
+     * or `state=ACTIVE` (legacy string form). Returns null when the field is
+     * absent, false when it holds only closed/future sprints.
+     */
+    private static function hasActiveSprint(mixed $value): ?bool
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        foreach ($value as $sprint) {
+            if (is_array($sprint) && isset($sprint['state']) && mb_strtolower((string) $sprint['state']) === 'active') {
+                return true;
+            }
+
+            if (is_string($sprint) && preg_match('/state=([^,\]]+)/', $sprint, $matches) === 1 && mb_strtolower(mb_trim($matches[1])) === 'active') {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

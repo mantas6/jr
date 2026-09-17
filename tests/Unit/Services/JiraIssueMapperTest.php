@@ -161,6 +161,75 @@ test('map parses the legacy sprint string format', function () {
     expect($row['sprints'])->toBe(['Legacy Sprint']);
 });
 
+test('in_active_sprint is true when a modern sprint is active', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $payload = fullJiraPayload();
+    $payload['fields']['customfield_10020'] = [
+        ['name' => 'Sprint 1', 'state' => 'closed'],
+        ['name' => 'Sprint 2', 'state' => 'active'],
+    ];
+
+    $row = JiraIssueMapper::map($payload, $user, null, 'customfield_10020');
+
+    expect($row['in_active_sprint'])->toBeTrue();
+});
+
+test('in_active_sprint is true when a legacy sprint string has state=ACTIVE', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $payload = fullJiraPayload();
+    $payload['fields']['customfield_10020'] = [
+        'com.atlassian.greenhopper.service.sprint.Sprint@1[id=1,name=Legacy Sprint,state=ACTIVE]',
+    ];
+
+    $row = JiraIssueMapper::map($payload, $user, null, 'customfield_10020');
+
+    expect($row['in_active_sprint'])->toBeTrue();
+});
+
+test('in_active_sprint is false when only closed or future sprints exist', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $payload = fullJiraPayload();
+    $payload['fields']['customfield_10020'] = [
+        ['name' => 'Sprint 1', 'state' => 'closed'],
+        ['name' => 'Sprint 2', 'state' => 'future'],
+    ];
+
+    $row = JiraIssueMapper::map($payload, $user, null, 'customfield_10020');
+
+    expect($row['in_active_sprint'])->toBeFalse();
+});
+
+test('in_active_sprint is null when the sprint field is absent', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $withoutFieldId = JiraIssueMapper::map(fullJiraPayload(), $user);
+    $withFieldIdButNoSprint = JiraIssueMapper::map(fullJiraPayload(), $user, null, 'customfield_10020');
+
+    expect($withoutFieldId['in_active_sprint'])->toBeNull()
+        ->and($withFieldIdButNoSprint['in_active_sprint'])->toBeNull();
+});
+
+test('mapForUpsert casts in_active_sprint to an integer', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 5;
+
+    $payload = fullJiraPayload();
+    $payload['fields']['customfield_10020'] = [
+        ['name' => 'Sprint 1', 'state' => 'active'],
+    ];
+
+    $row = JiraIssueMapper::mapForUpsert($payload, $user, Carbon::parse('2024-05-01 09:00:00'), 'customfield_10020');
+
+    expect($row['in_active_sprint'])->toBe(1);
+});
+
 test('mapForUpsert json-encodes the sprints array', function () {
     $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
     $user->id = 5;

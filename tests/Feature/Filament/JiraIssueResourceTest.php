@@ -425,6 +425,49 @@ test('the sprint filter narrows to the selected sprint without partial-name fals
         ->assertCanNotSeeTableRecords([$inSprintTen]);
 });
 
+test('the not-closed filter hides Done tasks by default on the full list', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $open = JiraIssue::factory()->for($user)->create();
+    $done = JiraIssue::factory()->for($user)->done()->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertCanSeeTableRecords([$open])
+        ->assertCanNotSeeTableRecords([$done]);
+});
+
+test('removing the not-closed filter reveals Done tasks on the full list', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $open = JiraIssue::factory()->for($user)->create();
+    $done = JiraIssue::factory()->for($user)->done()->create();
+
+    livewire(ListJiraIssues::class)
+        ->filterTable('open', false)
+        ->assertCanSeeTableRecords([$open, $done]);
+});
+
+test('the current-sprint filter shows only active-sprint tasks on the full list', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $inSprint = JiraIssue::factory()->for($user)->inActiveSprint()->create();
+    $notInSprint = JiraIssue::factory()->for($user)->create();
+
+    livewire(ListJiraIssues::class)
+        ->filterTable('in_active_sprint', true)
+        ->assertCanSeeTableRecords([$inSprint])
+        ->assertCanNotSeeTableRecords([$notInSprint]);
+});
+
 test('the view page renders all task data for the owner', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);

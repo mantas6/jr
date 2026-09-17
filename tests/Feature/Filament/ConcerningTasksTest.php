@@ -65,6 +65,51 @@ test('the snooze filter is hidden on the full task list', function () {
         ->assertTableFilterHidden('snoozed');
 });
 
+test('the not-closed filter hides Done tasks by default on the concerning page', function () {
+    $open = JiraIssue::factory()->for($this->user)->important()->create();
+    $done = JiraIssue::factory()->for($this->user)->important()->done()->create();
+
+    livewire(ListConcerningTasks::class)
+        ->assertCanSeeTableRecords([$open])
+        ->assertCanNotSeeTableRecords([$done]);
+
+    livewire(ListConcerningTasks::class)
+        ->filterTable('open', false)
+        ->assertCanSeeTableRecords([$open, $done]);
+});
+
+test('the current-sprint filter shows only active-sprint tasks on the concerning page', function () {
+    $inSprint = JiraIssue::factory()->for($this->user)->important()->inActiveSprint()->create();
+    $notInSprint = JiraIssue::factory()->for($this->user)->important()->create();
+
+    livewire(ListConcerningTasks::class)
+        ->filterTable('in_active_sprint', true)
+        ->assertCanSeeTableRecords([$inSprint])
+        ->assertCanNotSeeTableRecords([$notInSprint]);
+});
+
+test('the concerning page only exposes the snooze, not-closed and current-sprint filters', function () {
+    livewire(ListConcerningTasks::class)
+        ->assertTableFilterVisible('snoozed')
+        ->assertTableFilterVisible('open')
+        ->assertTableFilterVisible('in_active_sprint')
+        ->assertTableFilterHidden('status')
+        ->assertTableFilterHidden('issue_type')
+        ->assertTableFilterHidden('assignee_name')
+        ->assertTableFilterHidden('sprint');
+});
+
+test('the full task list exposes the trimmed filters plus not-closed and current-sprint', function () {
+    livewire(ListJiraIssues::class)
+        ->assertTableFilterVisible('status')
+        ->assertTableFilterVisible('issue_type')
+        ->assertTableFilterVisible('assignee_name')
+        ->assertTableFilterVisible('sprint')
+        ->assertTableFilterVisible('open')
+        ->assertTableFilterVisible('in_active_sprint')
+        ->assertTableFilterHidden('snoozed');
+});
+
 test('starring a task from the full list marks it important', function () {
     $issue = JiraIssue::factory()->for($this->user)->create(['is_important' => false]);
 

@@ -26,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $assignee_name
  * @property string|null $reporter_name
  * @property array<int, string>|null $sprints
+ * @property bool|null $in_active_sprint
  * @property bool $is_important
  * @property Carbon|null $concerning_since
  * @property Carbon|null $snoozed_until
@@ -54,6 +55,7 @@ use Illuminate\Support\Carbon;
     'assignee_name',
     'reporter_name',
     'sprints',
+    'in_active_sprint',
     'is_important',
     'concerning_since',
     'snoozed_until',
@@ -193,6 +195,7 @@ class JiraIssue extends Model
     {
         return [
             'sprints' => 'array',
+            'in_active_sprint' => 'boolean',
             'is_important' => 'boolean',
             'concerning_since' => 'datetime',
             'snoozed_until' => 'datetime',

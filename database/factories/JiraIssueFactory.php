@@ -19,12 +19,10 @@ class JiraIssueFactory extends Factory
      */
     public function definition(): array
     {
-        $statusCategory = fake()->randomElement(['To Do', 'In Progress', 'Done']);
-        $status = match ($statusCategory) {
-            'To Do' => 'To Do',
-            'In Progress' => 'In Progress',
-            default => 'Done',
-        };
+        // Default to an open status category so records stay visible under the
+        // table's default-on "Not closed" filter. Use the done() state for Done.
+        $statusCategory = fake()->randomElement(['To Do', 'In Progress']);
+        $status = $statusCategory;
 
         $projectKey = 'PROJ';
         $jiraKey = $projectKey.'-'.fake()->numberBetween(1, 999);
@@ -45,6 +43,7 @@ class JiraIssueFactory extends Factory
             'assignee_name' => fake()->optional()->name(),
             'reporter_name' => fake()->name(),
             'sprints' => null,
+            'in_active_sprint' => false,
             'is_important' => false,
             'concerning_since' => null,
             'snoozed_until' => null,
@@ -57,6 +56,28 @@ class JiraIssueFactory extends Factory
             'raw' => ['fields' => []],
             'last_synced_at' => now(),
         ];
+    }
+
+    /**
+     * Mark the issue as closed (Done status category).
+     */
+    public function done(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => 'Done',
+            'status_category' => 'Done',
+        ]);
+    }
+
+    /**
+     * Mark the issue as belonging to the current (active) sprint.
+     */
+    public function inActiveSprint(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'in_active_sprint' => true,
+            'sprints' => $attributes['sprints'] ?? ['Current Sprint'],
+        ]);
     }
 
     /**

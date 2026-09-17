@@ -20,6 +20,7 @@ use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -81,16 +82,20 @@ class JiraIssuesTable
             ])
             ->filters([
                 SelectFilter::make('status')
-                    ->options(fn (): array => self::distinctOptions('status')),
+                    ->options(fn (): array => self::distinctOptions('status'))
+                    ->visible(fn (HasTable $livewire): bool => !$livewire instanceof ListConcerningTasks),
                 SelectFilter::make('issue_type')
                     ->label('Type')
-                    ->options(fn (): array => self::distinctOptions('issue_type')),
+                    ->options(fn (): array => self::distinctOptions('issue_type'))
+                    ->visible(fn (HasTable $livewire): bool => !$livewire instanceof ListConcerningTasks),
                 SelectFilter::make('assignee_name')
                     ->label('Assignee')
-                    ->options(fn (): array => self::distinctOptions('assignee_name')),
+                    ->options(fn (): array => self::distinctOptions('assignee_name'))
+                    ->visible(fn (HasTable $livewire): bool => !$livewire instanceof ListConcerningTasks),
                 SelectFilter::make('sprint')
                     ->label('Sprint')
                     ->options(fn (): array => self::sprintOptions())
+                    ->visible(fn (HasTable $livewire): bool => !$livewire instanceof ListConcerningTasks)
                     ->query(function (Builder $query, array $data): Builder {
                         $value = $data['value'] ?? null;
 
@@ -100,6 +105,13 @@ class JiraIssuesTable
 
                         return $query->where('sprints', 'like', '%'.json_encode($value).'%');
                     }),
+                Filter::make('open')
+                    ->label('Not closed')
+                    ->default()
+                    ->query(fn (Builder $query): Builder => $query->whereRaw('lower(status_category) != ?', ['done'])),
+                Filter::make('in_active_sprint')
+                    ->label('Current sprint')
+                    ->query(fn (Builder $query): Builder => $query->where('in_active_sprint', true)),
                 SelectFilter::make('snoozed')
                     ->label('Snooze')
                     ->options([
