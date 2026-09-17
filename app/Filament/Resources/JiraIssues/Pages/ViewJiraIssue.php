@@ -63,6 +63,17 @@ class ViewJiraIssue extends ViewRecord
     }
 
     /**
+     * Drop the memoized description and comments so the next render refetches
+     * the latest content from Jira (e.g. after posting a new comment).
+     */
+    public function refreshIssueContent(): void
+    {
+        $this->issueContent = null;
+
+        $this->dispatch('$refresh');
+    }
+
+    /**
      * @return array<int, Action>
      */
     protected function getHeaderActions(): array

@@ -163,6 +163,32 @@ test('getIssueContent requests description and comments with rendered fields', f
     });
 });
 
+test('addComment posts the ADF body to the comment endpoint and returns the decoded response', function () {
+    $body = ['id' => '10500', 'body' => ['type' => 'doc']];
+
+    Http::fake(['*' => Http::response($body, 201)]);
+
+    $adf = ['version' => 1, 'type' => 'doc', 'content' => [
+        ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Hello']]],
+    ]];
+
+    $result = JiraClient::forUser(jiraUser())->addComment('PROJ-1', $adf);
+
+    expect($result)->toBe($body);
+
+    Http::assertSent(function (Request $request) use ($adf) {
+        return $request->method() === 'POST'
+            && $request->url() === 'https://example.atlassian.net/rest/api/3/issue/PROJ-1/comment'
+            && $request['body'] === $adf;
+    });
+});
+
+test('addComment surfaces a 403 as a JiraApiException', function () {
+    Http::fake(['*' => Http::response(['errorMessages' => ['nope']], 403)]);
+
+    JiraClient::forUser(jiraUser())->addComment('PROJ-1', ['version' => 1, 'type' => 'doc', 'content' => []]);
+})->throws(JiraApiException::class, 'Jira denied access (403). Your account lacks permission for this action.');
+
 test('getTransitions returns the transitions array', function () {
     Http::fake(['*' => Http::response(['transitions' => [['id' => '11', 'name' => 'Done']]])]);
 

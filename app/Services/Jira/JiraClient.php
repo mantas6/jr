@@ -185,6 +185,20 @@ final class JiraClient
     }
 
     /**
+     * Add a comment to an issue.
+     *
+     * @param  array<string, mixed>  $adfBody  The comment body as an ADF document.
+     * @return array<string, mixed>
+     */
+    public function addComment(string $issueKey, array $adfBody): array
+    {
+        return $this->send(fn (PendingRequest $request): Response => $request->post(
+            "/rest/api/3/issue/{$issueKey}/comment",
+            ['body' => $adfBody],
+        ))->json();
+    }
+
+    /**
      * Search users assignable to the given project.
      *
      * @return list<array<string, mixed>>

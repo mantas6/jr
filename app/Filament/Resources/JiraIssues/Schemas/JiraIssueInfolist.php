@@ -5,9 +5,15 @@ namespace App\Filament\Resources\JiraIssues\Schemas;
 use App\Filament\Resources\JiraIssues\Pages\ViewJiraIssue;
 use App\Filament\Resources\JiraIssues\Tables\JiraIssuesTable;
 use App\Models\JiraIssue;
+use App\Models\User;
+use App\Services\Jira\JiraApiException;
+use App\Services\Jira\JiraClient;
+use App\Services\Jira\JiraTextToAdf;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Group;
@@ -15,6 +21,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Js;
 
 class JiraIssueInfolist
@@ -95,8 +102,14 @@ class JiraIssueInfolist
                                             ->columnSpanFull(),
                                     ]),
                                 Section::make('Comments')
+                                    ->key('comments')
                                     ->columnSpanFull()
                                     ->schema([
+                                        Actions::make([
+                                            self::addCommentAction(),
+                                        ])
+                                            ->key('commentActions')
+                                            ->columnSpanFull(),
                                         RepeatableEntry::make('comments')
                                             ->hiddenLabel()
                                             ->state(fn (ViewJiraIssue $livewire): array => $livewire->comments())
@@ -135,6 +148,50 @@ class JiraIssueInfolist
                             ->deferLoading(),
                     ),
             ]);
+    }
+
+    /**
+     * Build the "Add comment" action for the Comments section header. It posts
+     * a new comment to Jira, then refreshes the live content so it appears.
+     */
+    private static function addCommentAction(): Action
+    {
+        return Action::make('addComment')
+            ->label('Add comment')
+            ->icon(Heroicon::OutlinedChatBubbleLeftEllipsis)
+            ->visible(fn (): bool => self::currentUser()->hasJiraConnection())
+            ->schema([
+                Textarea::make('body')
+                    ->label('Comment')
+                    ->required()
+                    ->rows(8)
+                    ->helperText('Supports basic Markdown: **bold**, *italic*, `code`, lists, fenced code blocks, links.'),
+            ])
+            ->action(function (array $data, Action $action, ViewJiraIssue $livewire, JiraIssue $record): void {
+                try {
+                    JiraClient::forUser(self::currentUser())
+                        ->addComment($record->jira_key, JiraTextToAdf::convert($data['body']));
+                } catch (JiraApiException $exception) {
+                    Notification::make()->danger()->title('Comment failed')->body($exception->getMessage())->send();
+
+                    $action->halt();
+                }
+
+                $livewire->refreshIssueContent();
+
+                Notification::make()->success()->title('Comment added')->send();
+            });
+    }
+
+    /**
+     * Resolve the authenticated user.
+     */
+    private static function currentUser(): User
+    {
+        /** @var User $user */
+        $user = Auth::user();
+
+        return $user;
     }
 
     /**

@@ -578,6 +578,100 @@ test('the view page renders copy-as-markdown buttons with the embedded markdown'
         ->toContain('Approved to merge.');
 });
 
+test('adding a comment from the view page posts the ADF body to jira and notifies', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-80',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-80/comment' => Http::response(['id' => '10500'], 201),
+        '*/rest/api/3/issue/PROJ-80*' => Http::response(['renderedFields' => [], 'fields' => []]),
+    ]);
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent')
+        ->callAction(TestAction::make('addComment')->schemaComponent('jiraContent.comments.commentActions'), data: ['body' => 'Hello **world**'])
+        ->assertNotified('Comment added');
+
+    Http::assertSent(function ($request) {
+        if ($request->method() !== 'POST' || !str_contains($request->url(), '/rest/api/3/issue/PROJ-80/comment')) {
+            return false;
+        }
+
+        $paragraph = $request['body']['content'][0]['content'] ?? [];
+
+        foreach ($paragraph as $node) {
+            if (($node['text'] ?? null) === 'world' && ($node['marks'][0]['type'] ?? null) === 'strong') {
+                return true;
+            }
+        }
+
+        return false;
+    });
+});
+
+test('a rejected comment from the view page notifies and halts', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-81',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-81/comment' => Http::response(['errorMessages' => ['Nope']], 400),
+        '*/rest/api/3/issue/PROJ-81*' => Http::response(['renderedFields' => [], 'fields' => []]),
+    ]);
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent')
+        ->callAction(TestAction::make('addComment')->schemaComponent('jiraContent.comments.commentActions'), data: ['body' => 'Boom'])
+        ->assertNotified('Comment failed')
+        ->assertNotNotified('Comment added');
+});
+
+test('the add-comment action is shown with a jira connection and hidden without one', function () {
+    $connected = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($connected);
+
+    $issue = JiraIssue::factory()->for($connected)->create([
+        'jira_key' => 'PROJ-82',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake(['*/rest/api/3/issue/PROJ-82*' => Http::response(['renderedFields' => [], 'fields' => []])]);
+
+    $connectedComponent = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    expect($connectedComponent->effects['partials']['schema.infolist.jiraContent'])
+        ->toContain('Add comment');
+
+    $disconnected = User::factory()->create();
+    $this->actingAs($disconnected);
+
+    $theirIssue = JiraIssue::factory()->for($disconnected)->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake();
+
+    $disconnectedComponent = livewire(ViewJiraIssue::class, ['record' => $theirIssue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    expect($disconnectedComponent->effects['partials']['schema.infolist.jiraContent'])
+        ->not->toContain('Add comment');
+});
+
 test('the view page loads without a jira connection and shows content placeholders', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
