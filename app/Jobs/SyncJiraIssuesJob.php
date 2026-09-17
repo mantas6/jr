@@ -163,7 +163,7 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
             }
 
             foreach (array_chunk($rows, 100) as $chunk) {
-                JiraIssue::upsert($chunk, ['user_id', 'jira_id'], self::UPSERT_COLUMNS);
+                $this->upsertChunk($chunk);
             }
 
             $nextPageToken = $page['nextPageToken'] ?? null;
@@ -184,6 +184,51 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         $this->user->forceFill($attributes)->save();
 
         SyncJiraMentionsJob::dispatch($this->user);
+    }
+
+    /**
+     * Upsert a chunk of mapped rows, unsnoozing any snoozed issues whose Jira
+     * `updated` timestamp advanced since they were snoozed.
+     *
+     * @param  list<array<string, string|int|null>>  $chunk
+     */
+    private function upsertChunk(array $chunk): void
+    {
+        $jiraIds = array_column($chunk, 'jira_id');
+
+        /** @var \Illuminate\Support\Collection<string, JiraIssue> $existing */
+        $existing = JiraIssue::query()
+            ->where('user_id', $this->user->id)
+            ->whereIn('jira_id', $jiraIds)
+            ->get(['jira_id', 'jira_updated_at', 'snoozed_until'])
+            ->keyBy('jira_id');
+
+        JiraIssue::upsert($chunk, ['user_id', 'jira_id'], self::UPSERT_COLUMNS);
+
+        $unsnoozeIds = [];
+
+        foreach ($chunk as $row) {
+            $current = $existing->get((string) $row['jira_id']);
+
+            if ($current === null) {
+                continue;
+            }
+
+            $incomingUpdatedAt = is_string($row['jira_updated_at'])
+                ? Carbon::parse($row['jira_updated_at'])
+                : null;
+
+            if (JiraIssue::shouldUnsnooze($current->snoozed_until, $current->jira_updated_at, $incomingUpdatedAt)) {
+                $unsnoozeIds[] = $row['jira_id'];
+            }
+        }
+
+        if ($unsnoozeIds !== []) {
+            JiraIssue::query()
+                ->where('user_id', $this->user->id)
+                ->whereIn('jira_id', $unsnoozeIds)
+                ->update(['snoozed_until' => null]);
+        }
     }
 
     /**

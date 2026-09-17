@@ -86,7 +86,13 @@ final class JiraIssueActions
     {
         $payload = $this->client->getIssue($issue->jira_key);
 
-        $issue->update(JiraIssueMapper::map($payload, $this->user, Carbon::now()));
+        $attributes = JiraIssueMapper::map($payload, $this->user, Carbon::now());
+
+        if (JiraIssue::shouldUnsnooze($issue->snoozed_until, $issue->jira_updated_at, $attributes['jira_updated_at'])) {
+            $attributes['snoozed_until'] = null;
+        }
+
+        $issue->update($attributes);
 
         return $issue;
     }

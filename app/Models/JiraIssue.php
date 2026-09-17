@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Database\Factories\JiraIssueFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -69,6 +70,29 @@ class JiraIssue extends Model
 {
     /** @use HasFactory<JiraIssueFactory> */
     use HasFactory;
+
+    /**
+     * Determine whether a currently snoozed issue should be unsnoozed because it
+     * was updated in Jira after it was snoozed.
+     *
+     * The snooze is cleared only when the issue is actively snoozed and the
+     * incoming Jira `updated` timestamp is strictly later than the stored one.
+     */
+    public static function shouldUnsnooze(
+        ?CarbonInterface $snoozedUntil,
+        ?CarbonInterface $storedUpdatedAt,
+        ?CarbonInterface $incomingUpdatedAt,
+    ): bool {
+        if ($snoozedUntil === null || $snoozedUntil->lte(now())) {
+            return false;
+        }
+
+        if ($incomingUpdatedAt === null) {
+            return false;
+        }
+
+        return $storedUpdatedAt === null || $incomingUpdatedAt->gt($storedUpdatedAt);
+    }
 
     /**
      * The user that owns the Jira issue.

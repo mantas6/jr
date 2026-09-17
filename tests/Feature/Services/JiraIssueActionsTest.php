@@ -137,6 +137,46 @@ test('assign writes to jira and refreshes the row', function () {
     });
 });
 
+test('refreshing a snoozed issue clears the snooze when jira was updated after snoozing', function () {
+    $user = User::factory()->withJiraConnection()->create();
+    $issue = JiraIssue::factory()->for($user)->snoozed()->create([
+        'jira_key' => 'PROJ-10',
+        'assignee_account_id' => null,
+        'jira_updated_at' => '2024-01-01 00:00:00',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-10/assignee' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-10*' => Http::response(issuePayload('PROJ-10')),
+    ]);
+
+    JiraIssueActions::forUser($user)->assign($issue, 'acc-9');
+
+    expect($issue->fresh()->snoozed_until)->toBeNull();
+});
+
+test('refreshing a snoozed issue preserves the snooze when jira updated timestamp is unchanged', function () {
+    $user = User::factory()->withJiraConnection()->create();
+
+    $snoozedUntil = now()->addHour();
+
+    $issue = JiraIssue::factory()->for($user)->snoozed($snoozedUntil)->create([
+        'jira_key' => 'PROJ-11',
+        'assignee_account_id' => null,
+        'jira_updated_at' => '2024-02-01 00:00:00',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-11/assignee' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-11*' => Http::response(issuePayload('PROJ-11')),
+    ]);
+
+    JiraIssueActions::forUser($user)->assign($issue, 'acc-9');
+
+    expect($issue->fresh()->snoozed_until->toDateTimeString())
+        ->toBe($snoozedUntil->toDateTimeString());
+});
+
 test('assign failure throws and leaves the row unchanged', function () {
     $user = User::factory()->withJiraConnection()->create();
     $issue = JiraIssue::factory()->for($user)->create([

@@ -176,6 +176,55 @@ test('re-running the sync updates existing rows without duplicating them', funct
         ->and(JiraIssue::where('jira_id', '1001')->firstOrFail()->summary)->toBe('Updated summary');
 });
 
+test('a snooze is cleared when the issue was updated in jira after being snoozed', function () {
+    $user = syncUser();
+
+    $issue = JiraIssue::factory()->for($user)->snoozed()->create([
+        'jira_id' => '1001',
+        'jira_key' => 'PROJ-1',
+        'jira_updated_at' => '2024-01-01 10:00:00',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
+        '*/rest/api/3/search/jql*' => Http::response([
+            'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'Updated issue')],
+            'isLast' => true,
+        ]),
+        '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
+    ]);
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    expect($issue->fresh()->snoozed_until)->toBeNull();
+});
+
+test('a snooze is preserved when the jira updated timestamp is unchanged', function () {
+    $user = syncUser();
+
+    $snoozedUntil = now()->addHour();
+
+    $issue = JiraIssue::factory()->for($user)->snoozed($snoozedUntil)->create([
+        'jira_id' => '1001',
+        'jira_key' => 'PROJ-1',
+        'jira_updated_at' => '2024-02-01 10:00:00',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
+        '*/rest/api/3/search/jql*' => Http::response([
+            'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'Same update')],
+            'isLast' => true,
+        ]),
+        '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
+    ]);
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    expect($issue->fresh()->snoozed_until->toDateTimeString())
+        ->toBe($snoozedUntil->toDateTimeString());
+});
+
 test('a successful sync stamps the synced time and clears any previous error', function () {
     $user = syncUser(['jira_last_sync_error' => 'previous failure']);
 
