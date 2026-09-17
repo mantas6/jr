@@ -4,7 +4,6 @@ namespace App\Filament\Resources\JiraIssues\Tables;
 
 use App\Filament\Resources\JiraIssues\JiraIssueResource;
 use App\Filament\Resources\JiraIssues\Pages\ListConcerningTasks;
-use App\Jobs\SyncJiraIssuesJob;
 use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
@@ -161,34 +160,6 @@ class JiraIssuesTable
                 self::bulkStarAction(),
                 self::bulkSnoozeAction(),
                 self::bulkDismissAction(),
-            ])
-            ->headerActions([
-                Action::make('sync')
-                    ->label('Sync from Jira')
-                    ->icon(Heroicon::ArrowPath)
-                    ->disabled(fn (): bool => !self::user()->hasJiraConnection())
-                    ->tooltip(fn (): ?string => self::user()->hasJiraConnection() ? null : 'Connect Jira first')
-                    ->action(function (): void {
-                        SyncJiraIssuesJob::dispatch(self::user());
-
-                        Notification::make()
-                            ->success()
-                            ->title('Sync queued')
-                            ->send();
-                    }),
-                Action::make('forceSync')
-                    ->label('Full resync')
-                    ->icon(Heroicon::ArrowPathRoundedSquare)
-                    ->disabled(fn (): bool => !self::user()->hasJiraConnection())
-                    ->tooltip(fn (): ?string => self::user()->hasJiraConnection() ? null : 'Connect Jira first')
-                    ->action(function (): void {
-                        SyncJiraIssuesJob::dispatch(self::user(), force: true);
-
-                        Notification::make()
-                            ->success()
-                            ->title('Full sync queued')
-                            ->send();
-                    }),
             ])
             ->poll('30s');
     }

@@ -1,10 +1,12 @@
 <?php
 
 use App\Filament\Pages\JiraConnection;
+use App\Jobs\SyncJiraIssuesJob;
 use App\Models\User;
 use Filament\Auth\Pages\Register;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 
 test('guests are redirected to login', function () {
     $this->get(JiraConnection::getUrl())
@@ -172,6 +174,43 @@ test('re-saving with a blank token keeps the existing token', function () {
     Http::assertSent(function ($request) {
         return $request->hasHeader('Authorization', 'Basic '.base64_encode('jane@acme.com:original-token'));
     });
+});
+
+test('the sync action dispatches the job and notifies', function () {
+    Queue::fake();
+
+    $user = User::factory()->withJiraConnection()->create();
+    $this->actingAs($user);
+
+    livewire(JiraConnection::class)
+        ->callAction('sync')
+        ->assertNotified('Sync queued');
+
+    Queue::assertPushed(SyncJiraIssuesJob::class);
+});
+
+test('the full resync action dispatches a forced job and notifies', function () {
+    Queue::fake();
+
+    $user = User::factory()->withJiraConnection()->create();
+    $this->actingAs($user);
+
+    livewire(JiraConnection::class)
+        ->callAction('forceSync')
+        ->assertNotified('Full sync queued');
+
+    Queue::assertPushed(
+        SyncJiraIssuesJob::class,
+        fn (SyncJiraIssuesJob $job) => $job->user->is($user) && $job->force === true,
+    );
+});
+
+test('the sync actions are disabled when jira is not connected', function () {
+    $this->actingAs(User::factory()->create());
+
+    livewire(JiraConnection::class)
+        ->assertActionDisabled('sync')
+        ->assertActionDisabled('forceSync');
 });
 
 test('disconnecting clears every jira field', function () {

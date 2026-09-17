@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Jobs\SyncJiraIssuesJob;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
@@ -184,6 +185,8 @@ class JiraConnection extends Page
     protected function getHeaderActions(): array
     {
         return [
+            $this->syncAction(),
+            $this->forceSyncAction(),
             Action::make('disconnect')
                 ->label('Disconnect')
                 ->color('danger')
@@ -191,6 +194,48 @@ class JiraConnection extends Page
                 ->visible(fn (): bool => $this->getUser()->hasJiraConnection())
                 ->action(fn () => $this->disconnect()),
         ];
+    }
+
+    /**
+     * Queue an incremental sync of the current user's Jira issues.
+     */
+    protected function syncAction(): Action
+    {
+        return Action::make('sync')
+            ->label('Sync from Jira')
+            ->icon(Heroicon::ArrowPath)
+            ->disabled(fn (): bool => !$this->getUser()->hasJiraConnection())
+            ->tooltip(fn (): ?string => $this->getUser()->hasJiraConnection() ? null : 'Connect Jira first')
+            ->action(function (): void {
+                SyncJiraIssuesJob::dispatch($this->getUser());
+
+                Notification::make()
+                    ->success()
+                    ->title('Sync queued')
+                    ->send();
+            });
+    }
+
+    /**
+     * Queue a full resync of the current user's Jira issues.
+     */
+    protected function forceSyncAction(): Action
+    {
+        return Action::make('forceSync')
+            ->label('Full resync')
+            ->icon(Heroicon::ArrowPathRoundedSquare)
+            ->color('gray')
+            ->requiresConfirmation()
+            ->disabled(fn (): bool => !$this->getUser()->hasJiraConnection())
+            ->tooltip(fn (): ?string => $this->getUser()->hasJiraConnection() ? null : 'Connect Jira first')
+            ->action(function (): void {
+                SyncJiraIssuesJob::dispatch($this->getUser(), force: true);
+
+                Notification::make()
+                    ->success()
+                    ->title('Full sync queued')
+                    ->send();
+            });
     }
 
     protected function fillFormFromUser(): void

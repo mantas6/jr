@@ -4,12 +4,11 @@ use App\Filament\Resources\JiraIssues\JiraIssueResource;
 use App\Filament\Resources\JiraIssues\Pages\ListJiraIssues;
 use App\Filament\Resources\JiraIssues\Pages\ViewJiraIssue;
 use App\Filament\Resources\JiraIssues\Tables\JiraIssuesTable;
-use App\Jobs\SyncJiraIssuesJob;
 use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\JiraTransitionsCache;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Queue;
 
 /**
  * Build a Jira `getIssue` payload for the given key with sensible defaults.
@@ -66,53 +65,15 @@ test('the table is scoped to the current user', function () {
         ->assertCanNotSeeTableRecords([$theirs]);
 });
 
-test('the sync header action dispatches the job and notifies', function () {
+test('the sync actions no longer live on the tasks table', function () {
     Http::fake();
-    Queue::fake();
 
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
 
     livewire(ListJiraIssues::class)
-        ->callTableAction('sync')
-        ->assertNotified('Sync queued');
-
-    Queue::assertPushed(SyncJiraIssuesJob::class);
-});
-
-test('the sync action is disabled when jira is not connected', function () {
-    Http::fake();
-
-    $this->actingAs(User::factory()->create());
-
-    livewire(ListJiraIssues::class)
-        ->assertTableActionDisabled('sync');
-});
-
-test('the full resync header action dispatches a forced job and notifies', function () {
-    Http::fake();
-    Queue::fake();
-
-    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
-
-    livewire(ListJiraIssues::class)
-        ->callTableAction('forceSync')
-        ->assertNotified('Full sync queued');
-
-    Queue::assertPushed(
-        SyncJiraIssuesJob::class,
-        fn (SyncJiraIssuesJob $job) => $job->user->is($user) && $job->force === true,
-    );
-});
-
-test('the full resync action is disabled when jira is not connected', function () {
-    Http::fake();
-
-    $this->actingAs(User::factory()->create());
-
-    livewire(ListJiraIssues::class)
-        ->assertTableActionDisabled('forceSync');
+        ->assertActionDoesNotExist(TestAction::make('sync')->table())
+        ->assertActionDoesNotExist(TestAction::make('forceSync')->table());
 });
 
 test('opening the update modal reads status options from cache without hitting jira', function () {
