@@ -61,3 +61,26 @@ test('isAllowedPath only permits known attachment prefixes', function () {
         ->and(JiraAttachmentProxy::isAllowedPath('/myself'))->toBeFalse()
         ->and(JiraAttachmentProxy::isAllowedPath('rest/api/3/attachment/content/1'))->toBeFalse();
 });
+
+test('contentDisposition prefers the upstream header', function () {
+    expect(JiraAttachmentProxy::contentDisposition('/secure/attachment/1/a.png', 'attachment; filename="b.png"'))
+        ->toBe('attachment; filename="b.png"');
+});
+
+test('contentDisposition builds an inline disposition from a url-encoded filename segment', function () {
+    expect(JiraAttachmentProxy::contentDisposition('/secure/attachment/123/My%20Report.pdf', null))
+        ->toBe('inline; filename="My Report.pdf"')
+        ->and(JiraAttachmentProxy::contentDisposition('/secure/thumbnail/123/shot.png?default=false', ''))
+        ->toBe('inline; filename=shot.png');
+});
+
+test('contentDisposition adds an ascii fallback for non-ascii filenames', function () {
+    expect(JiraAttachmentProxy::contentDisposition('/secure/attachment/1/'.rawurlencode('Ataskaita ž.pdf'), null))
+        ->toBe("inline; filename=\"Ataskaita z.pdf\"; filename*=utf-8''Ataskaita%20%C5%BE.pdf");
+});
+
+test('contentDisposition returns null when the last segment is not a filename', function () {
+    expect(JiraAttachmentProxy::contentDisposition('/rest/api/3/attachment/content/123', null))->toBeNull()
+        ->and(JiraAttachmentProxy::contentDisposition('/secure/attachment/123/README', null))->toBeNull()
+        ->and(JiraAttachmentProxy::contentDisposition('/secure/attachment/1.2', null))->toBeNull();
+});

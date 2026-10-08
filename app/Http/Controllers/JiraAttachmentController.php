@@ -33,9 +33,17 @@ class JiraAttachmentController extends Controller
             abort(404);
         }
 
-        return response($jiraResponse->body(), Response::HTTP_OK, [
+        $headers = [
             'Content-Type' => $jiraResponse->header('Content-Type') ?: 'application/octet-stream',
             'Cache-Control' => 'private, max-age=3600',
-        ]);
+        ];
+
+        $contentDisposition = JiraAttachmentProxy::contentDisposition($path, $jiraResponse->header('Content-Disposition'));
+
+        if ($contentDisposition !== null) {
+            $headers['Content-Disposition'] = $contentDisposition;
+        }
+
+        return response($jiraResponse->body(), Response::HTTP_OK, $headers);
     }
 }

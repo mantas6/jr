@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Jira;
 
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\HeaderUtils;
+
 class JiraAttachmentProxy
 {
     /**
@@ -67,6 +70,47 @@ class JiraAttachmentProxy
         }
 
         return false;
+    }
+
+    /**
+     * Resolve the `Content-Disposition` header for a proxied attachment so the
+     * browser keeps the original filename instead of naming it after the proxy
+     * route. Jira's own header wins when present; otherwise the filename is
+     * taken from the last path segment (e.g. `/secure/attachment/1/a.pdf`).
+     * The disposition is `inline` so embedded images still render in-page.
+     */
+    public static function contentDisposition(string $path, ?string $upstreamDisposition): ?string
+    {
+        if (is_string($upstreamDisposition) && mb_trim($upstreamDisposition) !== '') {
+            return $upstreamDisposition;
+        }
+
+        $filename = self::filenameFromPath($path);
+
+        if ($filename === null) {
+            return null;
+        }
+
+        $asciiFallback = (string) preg_replace('/[^\x20-\x7E]|%/', '_', Str::ascii($filename));
+
+        return HeaderUtils::makeDisposition(HeaderUtils::DISPOSITION_INLINE, $filename, $asciiFallback);
+    }
+
+    /**
+     * Extract a filename from the last segment of an attachment path, or null
+     * when the segment does not look like one (e.g. a bare numeric id).
+     */
+    private static function filenameFromPath(string $path): ?string
+    {
+        $pathOnly = (string) parse_url($path, PHP_URL_PATH);
+        $segment = rawurldecode(Str::afterLast($pathOnly, '/'));
+        $filename = mb_trim((string) preg_replace('/[\x00-\x1F\x7F\/\\\\]/u', '_', $segment));
+
+        if (!str_contains($filename, '.') || preg_match('/[^\d.]/', $filename) !== 1) {
+            return null;
+        }
+
+        return $filename;
     }
 
     /**

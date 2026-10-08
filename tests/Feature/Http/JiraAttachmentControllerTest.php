@@ -29,6 +29,44 @@ test('it proxies an attachment using the user jira credentials', function () {
         && $request->hasHeader('Authorization', 'Basic '.base64_encode('me@example.com:secret-token')));
 });
 
+test('it forwards the upstream content disposition verbatim', function () {
+    $disposition = "attachment; filename=\"report.pdf\"; filename*=UTF-8''r%C3%A9port.pdf";
+
+    Http::fake([
+        '*' => Http::response('pdf-bytes', 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => $disposition,
+        ]),
+    ]);
+
+    $this->actingAs(attachmentUser())
+        ->get(route('jira.attachment', ['path' => '/rest/api/3/attachment/content/123']))
+        ->assertOk()
+        ->assertHeader('Content-Disposition', $disposition);
+});
+
+test('it derives an inline content disposition from the filename in the path', function () {
+    Http::fake([
+        '*' => Http::response('pdf-bytes', 200, ['Content-Type' => 'application/pdf']),
+    ]);
+
+    $this->actingAs(attachmentUser())
+        ->get(route('jira.attachment', ['path' => '/secure/attachment/123/My%20Report.pdf']))
+        ->assertOk()
+        ->assertHeader('Content-Disposition', 'inline; filename="My Report.pdf"');
+});
+
+test('it omits the content disposition when the path carries no filename', function () {
+    Http::fake([
+        '*' => Http::response('binary-image-bytes', 200, ['Content-Type' => 'image/png']),
+    ]);
+
+    $this->actingAs(attachmentUser())
+        ->get(route('jira.attachment', ['path' => '/rest/api/3/attachment/content/123']))
+        ->assertOk()
+        ->assertHeaderMissing('Content-Disposition');
+});
+
 test('it rejects paths outside the attachment allowlist', function () {
     Http::fake();
 
