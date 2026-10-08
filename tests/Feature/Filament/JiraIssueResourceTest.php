@@ -438,6 +438,40 @@ test('the PR column shows the pull request state icon, color and tooltip', funct
             && $column->getTooltip() === '2 pull requests, merged', $issue);
 });
 
+test('the PR column shows draft requests in blue and open requests in green', function (string $state, string $color, string $tooltip) {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->withPullRequest($state, 1)->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getIcon($column->getState()) === Heroicon::OutlinedArrowPathRoundedSquare
+            && $column->getColor($column->getState()) === $color
+            && $column->getTooltip() === $tooltip, $issue);
+})->with([
+    'draft' => ['DRAFT', 'info', '1 pull request, draft'],
+    'open' => ['OPEN', 'success', '1 pull request, open'],
+]);
+
+test('the PR column shows approved open or draft requests in yellow', function (string $state, string $color, string $tooltip) {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->withPullRequest($state, 1, approved: true)->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getColor($column->getState()) === $color
+            && $column->getTooltip() === $tooltip, $issue);
+})->with([
+    'open' => ['OPEN', 'warning', '1 pull request, open, approved'],
+    'draft' => ['DRAFT', 'warning', '1 pull request, draft, approved'],
+    'merged' => ['MERGED', 'gray', '1 pull request, merged'],
+]);
+
 test('the PR column is empty for a task without pull requests', function () {
     Http::fake();
 
@@ -800,8 +834,8 @@ test('an open PR overrides a stale merged badge and updates the list status', fu
         ]),
         '*/rest/dev-status/1.0/issue/detail*' => Http::response([
             'detail' => [['pullRequests' => [
-                ['id' => '934', 'status' => 'MERGED', 'name' => 'Merged change'],
-                ['id' => '937', 'status' => 'OPEN', 'name' => 'Unmerged change'],
+                ['id' => '934', 'status' => 'MERGED', 'name' => 'Merged change', 'reviewers' => [['name' => 'Alice', 'approved' => true]]],
+                ['id' => '937', 'status' => 'OPEN', 'name' => 'Unmerged change', 'reviewers' => [['name' => 'Bob', 'approved' => true]]],
             ]]],
         ]),
     ]);
@@ -810,14 +844,14 @@ test('an open PR overrides a stale merged badge and updates the list status', fu
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
     expect($component->effects['partials']['schema.infolist.jiraContent'])
-        ->toContain('2 pull requests, open')
+        ->toContain('2 pull requests, open, approved')
         ->not->toContain('1 pull request, merged');
 
-    $this->assertDatabaseHas('jira_issues', ['id' => $issue->id, 'pr_state' => 'OPEN', 'pr_count' => 2]);
+    $this->assertDatabaseHas('jira_issues', ['id' => $issue->id, 'pr_state' => 'OPEN', 'pr_count' => 2, 'pr_approved' => true]);
 
     livewire(ListJiraIssues::class)
-        ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getColor($column->getState()) === 'info'
-            && $column->getTooltip() === '2 pull requests, open', $issue->fresh());
+        ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getColor($column->getState()) === 'warning'
+            && $column->getTooltip() === '2 pull requests, open, approved', $issue->fresh());
 });
 
 test('declined statuses are omitted from the PR section summary', function (array $statuses, ?string $summary) {

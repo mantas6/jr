@@ -65,8 +65,12 @@ class JiraIssuesTable
                 IconColumn::make('pr_state')
                     ->label('PR')
                     ->icon(fn (?JiraPullRequestState $state): ?Heroicon => $state?->icon())
-                    ->color(fn (?JiraPullRequestState $state): ?string => $state === JiraPullRequestState::Merged ? 'gray' : $state?->color())
-                    ->tooltip(fn (JiraIssue $record): ?string => $record->pr_state?->describe($record->pr_count))
+                    ->color(fn (JiraIssue $record): ?string => match (true) {
+                        $record->pr_state === JiraPullRequestState::Merged => 'gray',
+                        $record->pr_approved && $record->pr_state?->isActive() => 'warning',
+                        default => $record->pr_state?->color(),
+                    })
+                    ->tooltip(fn (JiraIssue $record): ?string => $record->pr_state?->describe($record->pr_count, $record->pr_approved))
                     ->alignCenter()
                     ->width('1%')
                     ->toggleable(),

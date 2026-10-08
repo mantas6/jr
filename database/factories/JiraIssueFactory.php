@@ -100,11 +100,12 @@ class JiraIssueFactory extends Factory
     /**
      * Give the issue a linked pull request summary from Jira's Development field.
      */
-    public function withPullRequest(string $state = 'OPEN', int $count = 1): static
+    public function withPullRequest(string $state = 'OPEN', int $count = 1, bool $approved = false): static
     {
         return $this->state(fn (array $attributes): array => [
             'pr_state' => $state,
             'pr_count' => $count,
+            'pr_approved' => $approved,
         ]);
     }
 

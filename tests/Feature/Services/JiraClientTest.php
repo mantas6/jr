@@ -49,6 +49,24 @@ test('pooled development summaries use Jira credentials and isolate HTTP and con
         && $request->hasHeader('Authorization', 'Basic '.base64_encode('me@example.com:secret-token')));
 });
 
+test('pooled pull requests merge every provider and isolate summary and detail failures', function () {
+    $summary = ['summary' => ['pullrequest' => ['byInstanceType' => ['bitbucket' => ['count' => 1], 'github' => ['count' => 1]]]]];
+
+    Http::fake([
+        '*/rest/dev-status/1.0/issue/summary?issueId=1001' => Http::response($summary),
+        '*/rest/dev-status/1.0/issue/summary?issueId=1002' => Http::response([], 403),
+        '*/rest/dev-status/1.0/issue/summary?issueId=1003' => Http::response($summary),
+        '*/rest/dev-status/1.0/issue/detail?issueId=1001&applicationType=bitbucket*' => Http::response(['detail' => [['pullRequests' => [['id' => '1']]]]]),
+        '*/rest/dev-status/1.0/issue/detail?issueId=1001&applicationType=github*' => Http::response(['detail' => [['pullRequests' => [['id' => '2']]]]]),
+        '*/rest/dev-status/1.0/issue/detail?issueId=1003&applicationType=bitbucket*' => Http::response(['detail' => [['pullRequests' => [['id' => '3']]]]]),
+        '*/rest/dev-status/1.0/issue/detail?issueId=1003&applicationType=github*' => Http::response([], 500),
+    ]);
+
+    $result = JiraClient::forUser(jiraUser())->getPullRequestsForIssues(['1001', '1002', '1003']);
+
+    expect($result)->toEqual([1001 => [['id' => '1'], ['id' => '2']], 1002 => null, 1003 => null]);
+});
+
 test('development summaries do not make requests when no issues need refreshing', function () {
     Http::fake();
 

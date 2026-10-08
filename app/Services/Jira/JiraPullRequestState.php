@@ -13,11 +13,13 @@ use Filament\Support\Icons\Heroicon;
 enum JiraPullRequestState: string
 {
     case Open = 'OPEN';
+    case Draft = 'DRAFT';
     case Merged = 'MERGED';
     case Declined = 'DECLINED';
 
     /**
-     * Open requests take priority; declined requests do not affect the status.
+     * Open requests take priority over drafts, which take priority over merged
+     * requests; declined requests do not affect the status.
      *
      * @param  list<string>  $statuses
      */
@@ -29,9 +31,37 @@ enum JiraPullRequestState: string
             return self::Open;
         }
 
+        if (in_array(self::Draft->value, $statuses, true)) {
+            return self::Draft;
+        }
+
         return $statuses !== [] && array_diff($statuses, [self::Merged->value]) === []
             ? self::Merged
             : null;
+    }
+
+    /**
+     * Whether any open or draft request has at least one reviewer approval.
+     *
+     * @param  list<array{status: string, approved: bool}>  $pullRequests
+     */
+    public static function hasApproval(array $pullRequests): bool
+    {
+        foreach ($pullRequests as $pullRequest) {
+            if ($pullRequest['approved'] && self::tryFrom($pullRequest['status'])?->isActive()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the state represents a request still awaiting merge.
+     */
+    public function isActive(): bool
+    {
+        return $this === self::Open || $this === self::Draft;
     }
 
     /**
@@ -40,7 +70,8 @@ enum JiraPullRequestState: string
     public function color(): string
     {
         return match ($this) {
-            self::Open => 'info',
+            self::Open => 'success',
+            self::Draft => 'info',
             self::Merged => 'success',
             self::Declined => 'danger',
         };
@@ -52,7 +83,7 @@ enum JiraPullRequestState: string
     public function icon(): ?Heroicon
     {
         return match ($this) {
-            self::Open => Heroicon::OutlinedArrowPathRoundedSquare,
+            self::Open, self::Draft => Heroicon::OutlinedArrowPathRoundedSquare,
             self::Merged => Heroicon::OutlinedCheckCircle,
             self::Declined => null,
         };
@@ -67,9 +98,10 @@ enum JiraPullRequestState: string
     }
 
     /**
-     * Describe a pull request summary, e.g. `2 pull requests, merged`.
+     * Describe a pull request summary, e.g. `2 pull requests, merged` or
+     * `1 pull request, open, approved`.
      */
-    public function describe(?int $count): ?string
+    public function describe(?int $count, bool $approved = false): ?string
     {
         if ($this === self::Declined) {
             return null;
@@ -77,6 +109,7 @@ enum JiraPullRequestState: string
 
         $count = max(1, (int) $count);
 
-        return $count.' '.($count === 1 ? 'pull request' : 'pull requests').', '.$this->label();
+        return $count.' '.($count === 1 ? 'pull request' : 'pull requests').', '.$this->label()
+            .($approved && $this->isActive() ? ', approved' : '');
     }
 }

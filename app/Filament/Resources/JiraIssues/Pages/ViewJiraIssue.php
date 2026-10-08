@@ -30,7 +30,7 @@ class ViewJiraIssue extends ViewRecord
     private ?array $issueContent = null;
 
     /**
-     * @var list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, updated: CarbonInterface|null}>|null
+     * @var list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, approved: bool, updated: CarbonInterface|null}>|null
      */
     private ?array $pullRequestDetails = null;
 
@@ -88,7 +88,7 @@ class ViewJiraIssue extends ViewRecord
     }
 
     /**
-     * @return list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, updated: CarbonInterface|null}>
+     * @return list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, approved: bool, updated: CarbonInterface|null}>
      */
     public function pullRequests(): array
     {
@@ -110,9 +110,10 @@ class ViewJiraIssue extends ViewRecord
                 $record->fill([
                     'pr_state' => JiraPullRequestState::fromStatuses(array_column($this->pullRequestDetails, 'status')),
                     'pr_count' => count($this->pullRequestDetails),
+                    'pr_approved' => JiraPullRequestState::hasApproval($this->pullRequestDetails),
                 ]);
 
-                if ($record->isDirty(['pr_state', 'pr_count'])) {
+                if ($record->isDirty(['pr_state', 'pr_count', 'pr_approved'])) {
                     $record->saveQuietly();
                 }
             }
@@ -127,7 +128,9 @@ class ViewJiraIssue extends ViewRecord
     {
         $this->pullRequests();
 
-        return $this->currentRecord()->pr_state?->describe($this->currentRecord()->pr_count);
+        $record = $this->currentRecord();
+
+        return $record->pr_state?->describe($record->pr_count, $record->pr_approved);
     }
 
     /**

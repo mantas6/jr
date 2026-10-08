@@ -307,6 +307,7 @@ test('map extracts the pull request state and count from the development field',
 })->with([
     'merged' => ['MERGED', 2, JiraPullRequestState::Merged],
     'open' => ['OPEN', 1, JiraPullRequestState::Open],
+    'draft' => ['DRAFT', 1, JiraPullRequestState::Draft],
     'declined' => ['DECLINED', 3, JiraPullRequestState::Declined],
 ]);
 

@@ -48,6 +48,16 @@ test('map returns no subtasks for missing, empty or invalid fields', function (m
     'invalid' => ['invalid'],
 ]);
 
+test('mapPullRequests flags requests with at least one reviewer approval', function () {
+    $mapped = JiraIssueContentMapper::mapPullRequests([
+        ['id' => '17', 'reviewers' => [['name' => 'Alice', 'approved' => false], ['name' => 'Bob', 'approved' => true]]],
+        ['id' => '18', 'reviewers' => [['name' => 'Alice', 'approved' => false]]],
+    ]);
+
+    expect(array_column($mapped, 'approved'))->toBe([true, false])
+        ->and($mapped[0]['reviewers'])->toBe(['Alice (pending)', 'Bob (approved)']);
+});
+
 test('mapPullRequests blocks unsafe URLs and tolerates missing optional details', function () {
     $mapped = JiraIssueContentMapper::mapPullRequests([
         ['id' => '17', 'name' => 'A change', 'url' => 'javascript:alert(1)'],

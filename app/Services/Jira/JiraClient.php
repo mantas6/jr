@@ -194,15 +194,64 @@ final class JiraClient
                 '/rest/dev-status/1.0/issue/detail',
                 ['issueId' => $issueId, 'applicationType' => $provider, 'dataType' => 'pullrequest'],
             ))->json();
-            $details = data_get($payload, 'detail', []);
 
-            foreach (is_array($details) ? $details : [] as $detail) {
-                $requests = data_get($detail, 'pullRequests', []);
+            $pullRequests = [...$pullRequests, ...self::extractPullRequests($payload)];
+        }
 
-                if (is_array($requests)) {
-                    $pullRequests = [...$pullRequests, ...array_values(array_filter($requests, is_array(...)))];
-                }
+        return $pullRequests;
+    }
+
+    /**
+     * Fetch linked pull requests for several issues concurrently, isolating
+     * failures to each issue (a failed summary or detail lookup maps to null).
+     *
+     * @param  list<string>  $issueIds
+     * @return array<int|string, list<array<string, mixed>>|null>
+     */
+    public function getPullRequestsForIssues(array $issueIds): array
+    {
+        $summaries = $this->getDevelopmentSummaries($issueIds);
+        $pullRequests = [];
+
+        /** @var array<string, array{0: string, 1: string}> $lookups Keyed by "issueId|provider". */
+        $lookups = [];
+
+        foreach ($summaries as $issueId => $summary) {
+            $pullRequests[$issueId] = $summary === null ? null : [];
+            $providers = data_get($summary, 'summary.pullrequest.byInstanceType');
+
+            foreach (is_array($providers) ? array_keys($providers) : [] as $provider) {
+                $lookups[$issueId.'|'.$provider] = [(string) $issueId, (string) $provider];
             }
+        }
+
+        if ($lookups === []) {
+            return $pullRequests;
+        }
+
+        $responses = Http::pool(function (Pool $pool) use ($lookups): array {
+            $requests = [];
+
+            foreach ($lookups as $key => [$issueId, $provider]) {
+                $requests[] = $this->pooledRequest($pool, $key)->get(
+                    '/rest/dev-status/1.0/issue/detail',
+                    ['issueId' => $issueId, 'applicationType' => $provider, 'dataType' => 'pullrequest'],
+                );
+            }
+
+            return $requests;
+        }, concurrency: 5);
+
+        foreach ($responses as $key => $response) {
+            $issueId = $lookups[$key][0];
+
+            if ($pullRequests[$issueId] === null) {
+                continue;
+            }
+
+            $pullRequests[$issueId] = $response instanceof Response && $response->successful()
+                ? [...$pullRequests[$issueId], ...self::extractPullRequests($response->json())]
+                : null;
         }
 
         return $pullRequests;
@@ -237,10 +286,7 @@ final class JiraClient
             $requests = [];
 
             foreach ($issueIds as $issueId) {
-                $requests[] = $pool->as($issueId)
-                    ->baseUrl((string) $this->user->jira_site_url)
-                    ->withBasicAuth((string) $this->user->jira_email, (string) $this->user->jira_api_token)
-                    ->acceptJson()
+                $requests[] = $this->pooledRequest($pool, $issueId)
                     ->get('/rest/dev-status/1.0/issue/summary', ['issueId' => $issueId]);
             }
 
@@ -357,6 +403,38 @@ final class JiraClient
             "/rest/api/3/issue/{$key}/assignee",
             ['accountId' => $accountId],
         ));
+    }
+
+    /**
+     * Flatten the pull requests from a dev-status detail response.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function extractPullRequests(mixed $payload): array
+    {
+        $pullRequests = [];
+        $details = data_get($payload, 'detail', []);
+
+        foreach (is_array($details) ? $details : [] as $detail) {
+            $requests = data_get($detail, 'pullRequests', []);
+
+            if (is_array($requests)) {
+                $pullRequests = [...$pullRequests, ...array_values(array_filter($requests, is_array(...)))];
+            }
+        }
+
+        return $pullRequests;
+    }
+
+    /**
+     * Build a pooled request authenticated with the user's Jira credentials.
+     */
+    private function pooledRequest(Pool $pool, string $key): PendingRequest
+    {
+        return $pool->as($key)
+            ->baseUrl((string) $this->user->jira_site_url)
+            ->withBasicAuth((string) $this->user->jira_email, (string) $this->user->jira_api_token)
+            ->acceptJson();
     }
 
     /**

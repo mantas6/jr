@@ -31,6 +31,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $original_estimate_seconds
  * @property JiraPullRequestState|null $pr_state
  * @property int|null $pr_count
+ * @property bool $pr_approved
  * @property bool $is_important
  * @property Carbon|null $concerning_since
  * @property Carbon|null $snoozed_until
@@ -66,6 +67,7 @@ use Illuminate\Support\Carbon;
     'original_estimate_seconds',
     'pr_state',
     'pr_count',
+    'pr_approved',
     'is_important',
     'concerning_since',
     'snoozed_until',
@@ -240,6 +242,7 @@ class JiraIssue extends Model
             'original_estimate_seconds' => 'integer',
             'pr_state' => JiraPullRequestState::class,
             'pr_count' => 'integer',
+            'pr_approved' => 'boolean',
             'is_important' => 'boolean',
             'concerning_since' => 'datetime',
             'snoozed_until' => 'datetime',

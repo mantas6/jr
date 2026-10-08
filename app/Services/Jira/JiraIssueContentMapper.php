@@ -39,7 +39,7 @@ class JiraIssueContentMapper
 
     /**
      * @param  list<array<string, mixed>>  $pullRequests
-     * @return list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, updated: CarbonInterface|null}>
+     * @return list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, approved: bool, updated: CarbonInterface|null}>
      */
     public static function mapPullRequests(array $pullRequests): array
     {
@@ -49,10 +49,12 @@ class JiraIssueContentMapper
             $url = $pullRequest['url'] ?? null;
             $reviewers = $pullRequest['reviewers'] ?? [];
             $reviewerNames = [];
+            $approved = false;
 
             foreach (is_array($reviewers) ? $reviewers : [] as $reviewer) {
                 if (is_array($reviewer)) {
                     $reviewerNames[] = (string) ($reviewer['name'] ?? 'Unknown').(!empty($reviewer['approved']) ? ' (approved)' : ' (pending)');
+                    $approved = $approved || !empty($reviewer['approved']);
                 }
             }
 
@@ -65,6 +67,7 @@ class JiraIssueContentMapper
                 'destination' => (string) data_get($pullRequest, 'destination.branch', ''),
                 'author' => (string) data_get($pullRequest, 'author.name', ''),
                 'reviewers' => $reviewerNames,
+                'approved' => $approved,
                 'updated' => self::parseDate($pullRequest['lastUpdate'] ?? null),
             ];
         }

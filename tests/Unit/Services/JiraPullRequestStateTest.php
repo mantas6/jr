@@ -15,6 +15,8 @@ test('PR status prioritizes open requests and ignores declined requests', functi
 })->with([
     'open and merged' => [['MERGED', 'OPEN'], JiraPullRequestState::Open],
     'open and declined' => [['DECLINED', 'OPEN'], JiraPullRequestState::Open],
+    'open and draft' => [['DRAFT', 'OPEN'], JiraPullRequestState::Open],
+    'draft and merged' => [['MERGED', 'DRAFT'], JiraPullRequestState::Draft],
     'declined and merged' => [['MERGED', 'DECLINED'], JiraPullRequestState::Merged],
     'only declined' => [['DECLINED'], null],
     'all merged' => [['MERGED', 'MERGED'], JiraPullRequestState::Merged],
@@ -26,4 +28,19 @@ test('PR status prioritizes open requests and ignores declined requests', functi
 test('declined requests have no summary label or list icon', function () {
     expect(JiraPullRequestState::Declined->describe(2))->toBeNull()
         ->and(JiraPullRequestState::Declined->icon())->toBeNull();
+});
+
+test('approval counts only for open or draft requests', function (array $pullRequests, bool $expected) {
+    expect(JiraPullRequestState::hasApproval($pullRequests))->toBe($expected);
+})->with([
+    'approved open' => [[['status' => 'OPEN', 'approved' => true]], true],
+    'approved draft' => [[['status' => 'DRAFT', 'approved' => true]], true],
+    'unapproved open' => [[['status' => 'OPEN', 'approved' => false]], false],
+    'approved merged with unapproved open' => [[['status' => 'MERGED', 'approved' => true], ['status' => 'OPEN', 'approved' => false]], false],
+    'no requests' => [[], false],
+]);
+
+test('describe mentions approval only for open or draft requests', function () {
+    expect(JiraPullRequestState::Open->describe(1, approved: true))->toBe('1 pull request, open, approved')
+        ->and(JiraPullRequestState::Merged->describe(1, approved: true))->toBe('1 pull request, merged');
 });

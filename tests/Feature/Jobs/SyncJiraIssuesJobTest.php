@@ -204,6 +204,34 @@ test('sync replaces stale or incomplete PR data with the live summary', function
     'stale merged summary with unavailable live data is not shown as merged' => [403, null, null, true],
 ]);
 
+test('sync refreshes approvals for open and draft pull requests and keeps them when lookups fail', function () {
+    $user = syncUser();
+    $newlyApproved = JiraIssue::factory()->for($user)->withPullRequest('OPEN')->create(['jira_id' => '2001']);
+    $noLongerApproved = JiraIssue::factory()->for($user)->withPullRequest('DRAFT', approved: true)->create(['jira_id' => '2002']);
+    $unavailable = JiraIssue::factory()->for($user)->withPullRequest('OPEN', approved: true)->create(['jira_id' => '2003']);
+    $summary = ['summary' => ['pullrequest' => ['byInstanceType' => ['bitbucket' => ['count' => 1]]]]];
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
+        '*/rest/api/3/search/jql*' => Http::response(['issues' => [], 'isLast' => true]),
+        '*/rest/dev-status/1.0/issue/summary?issueId=2001' => Http::response($summary),
+        '*/rest/dev-status/1.0/issue/summary?issueId=2002' => Http::response($summary),
+        '*/rest/dev-status/1.0/issue/summary?issueId=2003' => Http::response([], 403),
+        '*/rest/dev-status/1.0/issue/detail?issueId=2001*' => Http::response(['detail' => [['pullRequests' => [
+            ['id' => '1', 'status' => 'OPEN', 'reviewers' => [['name' => 'Alice', 'approved' => true]]],
+        ]]]]),
+        '*/rest/dev-status/1.0/issue/detail?issueId=2002*' => Http::response(['detail' => [['pullRequests' => [
+            ['id' => '2', 'status' => 'DRAFT', 'reviewers' => [['name' => 'Alice', 'approved' => false]]],
+        ]]]]),
+    ]);
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    expect($newlyApproved->fresh()->pr_approved)->toBeTrue()
+        ->and($noLongerApproved->fresh()->pr_approved)->toBeFalse()
+        ->and($unavailable->fresh()->pr_approved)->toBeTrue();
+});
+
 test('a sync without a sprint field stores null sprints', function () {
     $user = syncUser();
 
