@@ -66,7 +66,7 @@ class JiraIssueInfolist
                             ->columnSpanFull(),
                     ]),
                 Section::make('Activity')
-                    ->columns(3)
+                    ->columns(4)
                     ->schema([
                         TextEntry::make('jira_created_at')
                             ->label('Created')
@@ -79,6 +79,10 @@ class JiraIssueInfolist
                         TextEntry::make('last_synced_at')
                             ->label('Last synced')
                             ->dateTime()
+                            ->placeholder('—'),
+                        TextEntry::make('original_estimate_seconds')
+                            ->label('Original estimate')
+                            ->state(fn (JiraIssue $record): ?string => $record->formattedOriginalEstimate())
                             ->placeholder('—'),
                     ]),
                 Group::make()

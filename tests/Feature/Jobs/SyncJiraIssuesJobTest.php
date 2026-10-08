@@ -57,12 +57,15 @@ function jiraIssuePayload(string $id, string $key, string $summary, string $type
 test('it pages through search results and upserts every issue', function () {
     $user = syncUser();
 
+    $estimatedIssue = jiraIssuePayload('1001', 'PROJ-1', 'First issue');
+    $estimatedIssue['fields']['timeoriginalestimate'] = 12600;
+
     Http::fake([
         '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/search/jql*' => Http::sequence()
             ->push([
                 'issues' => [
-                    jiraIssuePayload('1001', 'PROJ-1', 'First issue'),
+                    $estimatedIssue,
                     jiraIssuePayload('1002', 'PROJ-2', 'Second issue'),
                 ],
                 'nextPageToken' => 'page-2',
@@ -97,7 +100,9 @@ test('it pages through search results and upserts every issue', function () {
         ->and($issue->assignee_account_id)->toBe('acc-1')
         ->and($issue->assignee_name)->toBe('Jane Doe')
         ->and($issue->reporter_name)->toBe('John Reporter')
-        ->and($issue->jira_url)->toBe('https://example.atlassian.net/browse/PROJ-1');
+        ->and($issue->original_estimate_seconds)->toBe(12600)
+        ->and($issue->jira_url)->toBe('https://example.atlassian.net/browse/PROJ-1')
+        ->and(JiraIssue::where('jira_id', '1002')->firstOrFail()->original_estimate_seconds)->toBeNull();
 
     Http::assertSent(fn (Request $request) => isset($request['nextPageToken']) && $request['nextPageToken'] === 'page-2');
 });

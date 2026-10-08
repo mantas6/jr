@@ -45,6 +45,7 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         'reporter_name',
         'sprints',
         'in_active_sprint',
+        'original_estimate_seconds',
         'jira_url',
         'jira_created_at',
         'jira_updated_at',

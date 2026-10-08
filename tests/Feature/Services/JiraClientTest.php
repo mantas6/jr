@@ -46,7 +46,7 @@ test('searchIssues sends jql, fields and nextPageToken query params and returns 
     Http::assertSent(function (Request $request) {
         return str_starts_with($request->url(), 'https://example.atlassian.net/rest/api/3/search/jql')
             && $request['jql'] === 'project = "PROJ"'
-            && $request['fields'] === 'summary,status,issuetype,priority,assignee,reporter,created,updated'
+            && $request['fields'] === 'summary,status,issuetype,priority,assignee,reporter,created,updated,timeoriginalestimate'
             && $request['maxResults'] === 100
             && $request['nextPageToken'] === 'cursor-1';
     });
@@ -66,7 +66,7 @@ test('searchIssues appends extra fields to the requested field list', function (
     JiraClient::forUser(jiraUser())->searchIssues('project = "PROJ"', null, ['customfield_10020']);
 
     Http::assertSent(function (Request $request) {
-        return $request['fields'] === 'summary,status,issuetype,priority,assignee,reporter,created,updated,customfield_10020';
+        return $request['fields'] === 'summary,status,issuetype,priority,assignee,reporter,created,updated,timeoriginalestimate,customfield_10020';
     });
 });
 

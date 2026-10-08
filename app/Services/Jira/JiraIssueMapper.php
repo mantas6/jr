@@ -35,6 +35,7 @@ class JiraIssueMapper
      *     reporter_name: string|null,
      *     sprints: list<string>|null,
      *     in_active_sprint: bool|null,
+     *     original_estimate_seconds: int|null,
      *     jira_url: string,
      *     jira_created_at: CarbonInterface|null,
      *     jira_updated_at: CarbonInterface|null,
@@ -65,6 +66,7 @@ class JiraIssueMapper
             'reporter_name' => self::nullableString(data_get($fields, 'reporter.displayName')),
             'sprints' => $sprintFieldId !== null ? self::extractSprintNames(data_get($fields, $sprintFieldId)) : null,
             'in_active_sprint' => $sprintFieldId !== null ? self::hasActiveSprint(data_get($fields, $sprintFieldId)) : null,
+            'original_estimate_seconds' => self::nullableInt(data_get($fields, 'timeoriginalestimate')),
             'jira_url' => mb_rtrim((string) $user->jira_site_url, '/').'/browse/'.$key,
             'jira_created_at' => self::parseDate(data_get($fields, 'created')),
             'jira_updated_at' => self::parseDate(data_get($fields, 'updated')),
@@ -116,6 +118,14 @@ class JiraIssueMapper
     private static function nullableString(mixed $value): ?string
     {
         return $value === null ? null : (string) $value;
+    }
+
+    /**
+     * Cast a numeric value to an integer, or null when absent or non-numeric.
+     */
+    private static function nullableInt(mixed $value): ?int
+    {
+        return is_numeric($value) ? (int) $value : null;
     }
 
     /**

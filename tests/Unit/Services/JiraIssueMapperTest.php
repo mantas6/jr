@@ -22,6 +22,7 @@ function fullJiraPayload(): array
             'reporter' => ['displayName' => 'John Smith'],
             'created' => '2024-01-02T10:00:00.000+0000',
             'updated' => '2024-02-03T12:30:00.000+0000',
+            'timeoriginalestimate' => 9000,
         ],
     ];
 }
@@ -49,6 +50,7 @@ test('map converts a full payload into all columns', function () {
         ->and($row['assignee_account_id'])->toBe('acc-1')
         ->and($row['assignee_name'])->toBe('Jane Doe')
         ->and($row['reporter_name'])->toBe('John Smith')
+        ->and($row['original_estimate_seconds'])->toBe(9000)
         ->and($row['jira_url'])->toBe('https://example.atlassian.net/browse/PROJ-42')
         ->and($row['jira_created_at']->toDateTimeString())->toBe('2024-01-02 10:00:00')
         ->and($row['jira_updated_at']->toDateTimeString())->toBe('2024-02-03 12:30:00')
@@ -69,6 +71,16 @@ test('map handles null assignee, priority and reporter gracefully', function () 
         ->and($row['assignee_account_id'])->toBeNull()
         ->and($row['assignee_name'])->toBeNull()
         ->and($row['reporter_name'])->toBeNull();
+});
+
+test('map returns a null original estimate when jira has none', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $payload = fullJiraPayload();
+    $payload['fields']['timeoriginalestimate'] = null;
+
+    expect(JiraIssueMapper::map($payload, $user)['original_estimate_seconds'])->toBeNull();
 });
 
 test('map builds the jira_url correctly when the site url has a trailing slash', function () {

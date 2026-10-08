@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Jira\JiraDuration;
 use Carbon\CarbonInterface;
 use Database\Factories\JiraIssueFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -27,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $reporter_name
  * @property array<int, string>|null $sprints
  * @property bool|null $in_active_sprint
+ * @property int|null $original_estimate_seconds
  * @property bool $is_important
  * @property Carbon|null $concerning_since
  * @property Carbon|null $snoozed_until
@@ -56,6 +58,7 @@ use Illuminate\Support\Carbon;
     'reporter_name',
     'sprints',
     'in_active_sprint',
+    'original_estimate_seconds',
     'is_important',
     'concerning_since',
     'snoozed_until',
@@ -104,6 +107,15 @@ class JiraIssue extends Model
     public function isSnoozed(): bool
     {
         return $this->snoozed_until !== null && $this->snoozed_until->isFuture();
+    }
+
+    /**
+     * The original estimate formatted Jira-style (e.g. `2w 1d 3h 30m`), or null
+     * when the issue has no estimate.
+     */
+    public function formattedOriginalEstimate(): ?string
+    {
+        return JiraDuration::format($this->original_estimate_seconds);
     }
 
     /**
@@ -196,6 +208,7 @@ class JiraIssue extends Model
         return [
             'sprints' => 'array',
             'in_active_sprint' => 'boolean',
+            'original_estimate_seconds' => 'integer',
             'is_important' => 'boolean',
             'concerning_since' => 'datetime',
             'snoozed_until' => 'datetime',

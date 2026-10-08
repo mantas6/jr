@@ -27,6 +27,7 @@ final class JiraClient
         'reporter',
         'created',
         'updated',
+        'timeoriginalestimate',
     ];
 
     /**

@@ -454,6 +454,21 @@ test('the view page renders all task data for the owner', function () {
     Http::assertNothingSent();
 });
 
+test('the view page shows the formatted original estimate', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->withEstimate((8 * 3600) + (3 * 3600) + (30 * 60))->create([
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertOk()
+        ->assertSee('Original estimate')
+        ->assertSee('1d 3h 30m');
+});
+
 test('the view page paints without blocking on the deferred jira content', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);

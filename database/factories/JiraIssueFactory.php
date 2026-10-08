@@ -45,6 +45,7 @@ class JiraIssueFactory extends Factory
             'reporter_name' => fake()->name(),
             'sprints' => null,
             'in_active_sprint' => false,
+            'original_estimate_seconds' => null,
             'is_important' => false,
             'concerning_since' => null,
             'snoozed_until' => null,
@@ -78,6 +79,16 @@ class JiraIssueFactory extends Factory
         return $this->state(fn (array $attributes): array => [
             'in_active_sprint' => true,
             'sprints' => $attributes['sprints'] ?? ['Current Sprint'],
+        ]);
+    }
+
+    /**
+     * Give the issue a Jira original estimate (defaults to one 8-hour day).
+     */
+    public function withEstimate(int $seconds = 8 * 3600): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'original_estimate_seconds' => $seconds,
         ]);
     }
 
