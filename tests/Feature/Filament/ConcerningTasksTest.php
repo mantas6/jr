@@ -75,6 +75,53 @@ test('the unread tab shows active tasks not viewed since their last Jira update'
         ->assertCanNotSeeTableRecords([$viewedAfterUpdate, $snoozedUnread]);
 });
 
+const UNREAD_MARKER = '<span class="font-bold text-danger-600 dark:text-danger-400" title="Updated since you last opened it">*</span>';
+
+test('the key column marks unread tasks with a red asterisk', function (Closure $makeIssue, bool $expectMarker) {
+    $this->travelTo(Carbon::parse('2026-03-10 12:00:00'));
+
+    /** @var JiraIssue $issue */
+    $issue = $makeIssue($this->user);
+
+    $page = livewire(ListConcerningTasks::class)
+        ->assertCanSeeTableRecords([$issue])
+        ->assertSee($issue->jira_key);
+
+    $expectMarker
+        ? $page->assertSeeHtml(e($issue->jira_key).' '.UNREAD_MARKER)
+        : $page->assertDontSeeHtml(UNREAD_MARKER);
+
+    // Copying the key must yield the plain key, never the marker markup.
+    $page->assertSeeHtml("writeText('{$issue->jira_key}')");
+})->with([
+    'never viewed' => [
+        fn (User $user): JiraIssue => JiraIssue::factory()->for($user)->important()->create([
+            'jira_updated_at' => now()->subDay(),
+        ]),
+        true,
+    ],
+    'updated after being viewed' => [
+        fn (User $user): JiraIssue => JiraIssue::factory()->for($user)->important()->viewed(now()->subDays(2))->create([
+            'jira_updated_at' => now()->subDay(),
+        ]),
+        true,
+    ],
+    'viewed after its last update' => [
+        fn (User $user): JiraIssue => JiraIssue::factory()->for($user)->important()->viewed(now()->subHour())->create([
+            'jira_updated_at' => now()->subDay(),
+        ]),
+        false,
+    ],
+]);
+
+test('the full task list also marks unread tasks with a red asterisk', function () {
+    $unread = JiraIssue::factory()->for($this->user)->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertCanSeeTableRecords([$unread])
+        ->assertSeeHtml(e($unread->jira_key).' '.UNREAD_MARKER);
+});
+
 test('each tab badge counts the current user\'s concerning tasks in that tab', function () {
     JiraIssue::factory()->for($this->user)->important()->create();
     JiraIssue::factory()->for($this->user)->important()->viewed()->create([

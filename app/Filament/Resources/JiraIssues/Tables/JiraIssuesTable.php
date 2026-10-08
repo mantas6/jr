@@ -32,6 +32,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\HtmlString;
 
 class JiraIssuesTable
 {
@@ -43,6 +44,7 @@ class JiraIssuesTable
                     ->label('Key')
                     ->url(fn (JiraIssue $record): string => $record->jira_url, shouldOpenInNewTab: true)
                     ->color('primary')
+                    ->suffix(fn (JiraIssue $record): ?HtmlString => self::unreadMarker($record))
                     ->copyable()
                     ->copyableState(fn (JiraIssue $record): string => $record->jira_key)
                     ->copyMessage('Key copied')
@@ -268,6 +270,20 @@ class JiraIssuesTable
         $jiraAccountId = self::user()->jira_account_id;
 
         return filled($jiraAccountId) && $record->assignee_account_id === $jiraAccountId;
+    }
+
+    /**
+     * A red asterisk shown after the key while the task has Jira activity the
+     * user has not seen yet (never opened, or updated since last opened).
+     * Mirrors the concerning page's "Unread" tab via {@see JiraIssue::isUnread()}.
+     */
+    private static function unreadMarker(JiraIssue $record): ?HtmlString
+    {
+        if (!$record->isUnread()) {
+            return null;
+        }
+
+        return new HtmlString(' <span class="font-bold text-danger-600 dark:text-danger-400" title="Updated since you last opened it">*</span>');
     }
 
     /**
