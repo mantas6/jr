@@ -168,7 +168,7 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
             }
 
             foreach (array_chunk($rows, 100) as $chunk) {
-                $this->upsertChunk($chunk);
+                $this->upsertChunk($chunk, $now);
             }
 
             $nextPageToken = $page['nextPageToken'] ?? null;
@@ -192,12 +192,13 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * Upsert a chunk of mapped rows, unsnoozing any snoozed issues whose Jira
-     * `updated` timestamp advanced since they were snoozed.
+     * Upsert a chunk of mapped rows, then stamp `assigned_to_me_at` on existing
+     * rows that were newly assigned to the user and clear any active snooze on
+     * them. New rows need no stamp since they have never been dismissed.
      *
      * @param  list<array<string, string|int|null>>  $chunk
      */
-    private function upsertChunk(array $chunk): void
+    private function upsertChunk(array $chunk, Carbon $now): void
     {
         $jiraIds = array_column($chunk, 'jira_id');
 
@@ -205,11 +206,12 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         $existing = JiraIssue::query()
             ->where('user_id', $this->user->id)
             ->whereIn('jira_id', $jiraIds)
-            ->get(['jira_id', 'jira_updated_at', 'snoozed_until'])
+            ->get(['jira_id', 'assignee_account_id', 'snoozed_until'])
             ->keyBy('jira_id');
 
         JiraIssue::upsert($chunk, ['user_id', 'jira_id'], self::UPSERT_COLUMNS);
 
+        $assignedIds = [];
         $unsnoozeIds = [];
 
         foreach ($chunk as $row) {
@@ -219,13 +221,24 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
                 continue;
             }
 
-            $incomingUpdatedAt = is_string($row['jira_updated_at'])
-                ? Carbon::parse($row['jira_updated_at'])
-                : null;
+            $incomingAssignee = $row['assignee_account_id'] === null ? null : (string) $row['assignee_account_id'];
 
-            if (JiraIssue::shouldUnsnooze($current->snoozed_until, $current->jira_updated_at, $incomingUpdatedAt)) {
+            if (!JiraIssue::becameAssignedToMe($current->assignee_account_id, $incomingAssignee, $this->user)) {
+                continue;
+            }
+
+            $assignedIds[] = $row['jira_id'];
+
+            if ($current->isSnoozed()) {
                 $unsnoozeIds[] = $row['jira_id'];
             }
+        }
+
+        if ($assignedIds !== []) {
+            JiraIssue::query()
+                ->where('user_id', $this->user->id)
+                ->whereIn('jira_id', $assignedIds)
+                ->update(['assigned_to_me_at' => $now]);
         }
 
         if ($unsnoozeIds !== []) {

@@ -42,11 +42,10 @@ test('an unstarred task that was pinned stays concerning until dismissed', funct
     expect(concerningIds($this->user))->not->toContain($issue->id);
 });
 
-test('a task assigned to me and updated since dismissal is concerning', function () {
+test('a task assigned to me that was never dismissed is concerning', function () {
     $issue = JiraIssue::factory()->for($this->user)->create([
         'assignee_account_id' => 'acc-me',
-        'dismissed_at' => now()->subDay(),
-        'jira_updated_at' => now(),
+        'dismissed_at' => null,
     ]);
 
     expect(concerningIds($this->user))->toContain($issue->id);
@@ -60,16 +59,30 @@ test('a task that mentions me is concerning', function () {
     expect(concerningIds($this->user))->toContain($issue->id);
 });
 
-test('a dismissed task is hidden until Jira reports newer activity', function () {
-    $issue = JiraIssue::factory()->for($this->user)->create([
+test('a dismissed task stays hidden when Jira reports other newer activity', function () {
+    $issue = JiraIssue::factory()->for($this->user)->mentionsMe()->create([
         'assignee_account_id' => 'acc-me',
-        'jira_updated_at' => now()->subDay(),
-        'dismissed_at' => now(),
+        'dismissed_at' => now()->subDay(),
+        'jira_updated_at' => now(),
+        'assigned_to_me_at' => now()->subWeek(),
+        'last_mentioned_at' => now()->subWeek(),
     ]);
 
     expect(concerningIds($this->user))->not->toContain($issue->id);
+});
 
-    $issue->update(['jira_updated_at' => now()->addMinute()]);
+test('a dismissed task reappears when I am newly assigned after the dismissal', function () {
+    $issue = JiraIssue::factory()->for($this->user)->dismissed(now()->subDay())->assignedToMeAt(now())->create([
+        'assignee_account_id' => 'acc-me',
+    ]);
+
+    expect(concerningIds($this->user))->toContain($issue->id);
+});
+
+test('a dismissed task reappears when I am newly mentioned in a comment after the dismissal', function () {
+    $issue = JiraIssue::factory()->for($this->user)->dismissed(now()->subDay())->mentionedAt(now())->create([
+        'assignee_account_id' => null,
+    ]);
 
     expect(concerningIds($this->user))->toContain($issue->id);
 });

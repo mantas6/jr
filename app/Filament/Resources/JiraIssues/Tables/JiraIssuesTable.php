@@ -404,9 +404,9 @@ class JiraIssuesTable
     }
 
     /**
-     * Dismiss a task until Jira reports newer activity. Dismissing also unstars
-     * the task and clears its concerning pin so it does not linger on the
-     * concerning list.
+     * Dismiss a task until you are newly assigned or newly mentioned in a
+     * comment. Dismissing also unstars the task and clears its concerning pin so
+     * it does not linger on the concerning list.
      */
     private static function dismissRecord(JiraIssue $record): void
     {
@@ -475,8 +475,8 @@ class JiraIssuesTable
     }
 
     /**
-     * Dismiss the task until Jira reports newer activity. Only on the
-     * concerning list.
+     * Dismiss the task until you are newly assigned or newly mentioned in a
+     * comment. Only on the concerning list.
      */
     private static function dismissAction(): Action
     {

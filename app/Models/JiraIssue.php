@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Services\Jira\JiraDuration;
 use App\Services\Jira\JiraPullRequestState;
-use Carbon\CarbonInterface;
 use Database\Factories\JiraIssueFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -37,8 +36,10 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $snoozed_until
  * @property Carbon|null $dismissed_at
  * @property Carbon|null $last_viewed_at
+ * @property Carbon|null $assigned_to_me_at
  * @property bool $mentions_me
  * @property Carbon|null $mentions_scanned_at
+ * @property Carbon|null $last_mentioned_at
  * @property string $jira_url
  * @property Carbon $jira_created_at
  * @property Carbon $jira_updated_at
@@ -70,8 +71,10 @@ use Illuminate\Support\Carbon;
     'snoozed_until',
     'dismissed_at',
     'last_viewed_at',
+    'assigned_to_me_at',
     'mentions_me',
     'mentions_scanned_at',
+    'last_mentioned_at',
     'jira_url',
     'jira_created_at',
     'jira_updated_at',
@@ -84,26 +87,19 @@ class JiraIssue extends Model
     use HasFactory;
 
     /**
-     * Determine whether a currently snoozed issue should be unsnoozed because it
-     * was updated in Jira after it was snoozed.
-     *
-     * The snooze is cleared only when the issue is actively snoozed and the
-     * incoming Jira `updated` timestamp is strictly later than the stored one.
+     * Determine whether an assignee change newly assigns the issue to the user:
+     * the incoming assignee is the user's Jira account and the previous one was
+     * someone else (or nobody). Always false when the user has no Jira account id.
      */
-    public static function shouldUnsnooze(
-        ?CarbonInterface $snoozedUntil,
-        ?CarbonInterface $storedUpdatedAt,
-        ?CarbonInterface $incomingUpdatedAt,
-    ): bool {
-        if ($snoozedUntil === null || $snoozedUntil->lte(now())) {
+    public static function becameAssignedToMe(?string $previousAssignee, ?string $incomingAssignee, User $user): bool
+    {
+        $accountId = $user->jira_account_id;
+
+        if (blank($accountId)) {
             return false;
         }
 
-        if ($incomingUpdatedAt === null) {
-            return false;
-        }
-
-        return $storedUpdatedAt === null || $incomingUpdatedAt->gt($storedUpdatedAt);
+        return $incomingAssignee === $accountId && $previousAssignee !== $accountId;
     }
 
     /**
@@ -162,9 +158,10 @@ class JiraIssue extends Model
      *
      * A task is "concerning" when it has been pinned to the list (starred at some
      * point and not dismissed since), or it is assigned to the user / mentions
-     * the user and has been updated in Jira since it was last dismissed.
-     * Unstarring a pinned task keeps it on the list until it is explicitly
-     * dismissed.
+     * the user and has not been dismissed, or was dismissed and the user has
+     * since been newly assigned or newly mentioned in a comment. Other Jira
+     * activity does not re-surface a dismissed task. Unstarring a pinned task
+     * keeps it on the list until it is explicitly dismissed.
      *
      * @param  Builder<JiraIssue>  $query
      * @return Builder<JiraIssue>
@@ -182,7 +179,8 @@ class JiraIssue extends Model
                         $query->orWhere('mentions_me', true);
                     })->where(function (Builder $query): void {
                         $query->whereNull('dismissed_at')
-                            ->orWhereColumn('jira_updated_at', '>', 'dismissed_at');
+                            ->orWhereColumn('assigned_to_me_at', '>', 'dismissed_at')
+                            ->orWhereColumn('last_mentioned_at', '>', 'dismissed_at');
                     });
                 });
         });
@@ -247,8 +245,10 @@ class JiraIssue extends Model
             'snoozed_until' => 'datetime',
             'dismissed_at' => 'datetime',
             'last_viewed_at' => 'datetime',
+            'assigned_to_me_at' => 'datetime',
             'mentions_me' => 'boolean',
             'mentions_scanned_at' => 'datetime',
+            'last_mentioned_at' => 'datetime',
             'raw' => 'array',
             'jira_created_at' => 'datetime',
             'jira_updated_at' => 'datetime',

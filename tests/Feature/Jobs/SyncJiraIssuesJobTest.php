@@ -211,53 +211,85 @@ test('re-running the sync updates existing rows without duplicating them', funct
         ->and(JiraIssue::where('jira_id', '1001')->firstOrFail()->summary)->toBe('Updated summary');
 });
 
-test('a snooze is cleared when the issue was updated in jira after being snoozed', function () {
-    $user = syncUser();
-
-    $issue = JiraIssue::factory()->for($user)->snoozed()->create([
-        'jira_id' => '1001',
-        'jira_key' => 'PROJ-1',
-        'jira_updated_at' => '2024-01-01 10:00:00',
-    ]);
-
+/**
+ * Fake a sync whose single search result is issue 1001 assigned to `acc-1`.
+ */
+function fakeAssignedIssueSync(): void
+{
     Http::fake([
         '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/search/jql*' => Http::response([
-            'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'Updated issue')],
+            'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'Assigned issue')],
             'isLast' => true,
         ]),
         '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
     ]);
+}
+
+test('a newly assigned issue is stamped and its active snooze is cleared', function () {
+    $this->freezeTime();
+
+    $user = syncUser(['jira_account_id' => 'acc-1']);
+
+    $issue = JiraIssue::factory()->for($user)->snoozed()->create([
+        'jira_id' => '1001',
+        'jira_key' => 'PROJ-1',
+        'assignee_account_id' => 'acc-other',
+    ]);
+
+    fakeAssignedIssueSync();
 
     (new SyncJiraIssuesJob($user))->handle();
 
-    expect($issue->fresh()->snoozed_until)->toBeNull();
+    $issue->refresh();
+
+    expect($issue->assigned_to_me_at->toDateTimeString())->toBe(now()->toDateTimeString())
+        ->and($issue->snoozed_until)->toBeNull();
 });
 
-test('a snooze is preserved when the jira updated timestamp is unchanged', function () {
-    $user = syncUser();
+test('an issue that was already assigned to me is not stamped and keeps its snooze despite newer jira activity', function () {
+    $user = syncUser(['jira_account_id' => 'acc-1']);
 
     $snoozedUntil = now()->addHour();
 
     $issue = JiraIssue::factory()->for($user)->snoozed($snoozedUntil)->create([
         'jira_id' => '1001',
         'jira_key' => 'PROJ-1',
-        'jira_updated_at' => '2024-02-01 10:00:00',
+        'assignee_account_id' => 'acc-1',
+        'jira_updated_at' => '2024-01-01 10:00:00',
     ]);
 
-    Http::fake([
-        '*/rest/api/3/field' => Http::response([]),
-        '*/rest/api/3/search/jql*' => Http::response([
-            'issues' => [jiraIssuePayload('1001', 'PROJ-1', 'Same update')],
-            'isLast' => true,
-        ]),
-        '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
-    ]);
+    fakeAssignedIssueSync();
 
     (new SyncJiraIssuesJob($user))->handle();
 
-    expect($issue->fresh()->snoozed_until->toDateTimeString())
-        ->toBe($snoozedUntil->toDateTimeString());
+    $issue->refresh();
+
+    expect($issue->assigned_to_me_at)->toBeNull()
+        ->and($issue->jira_updated_at->toDateTimeString())->toBe('2024-02-01 10:00:00')
+        ->and($issue->snoozed_until->toDateTimeString())->toBe($snoozedUntil->toDateTimeString());
+});
+
+test('an issue reassigned to someone else is not stamped and keeps its snooze', function () {
+    $user = syncUser(['jira_account_id' => 'acc-me']);
+
+    $snoozedUntil = now()->addHour();
+
+    $issue = JiraIssue::factory()->for($user)->snoozed($snoozedUntil)->create([
+        'jira_id' => '1001',
+        'jira_key' => 'PROJ-1',
+        'assignee_account_id' => null,
+    ]);
+
+    fakeAssignedIssueSync();
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    $issue->refresh();
+
+    expect($issue->assignee_account_id)->toBe('acc-1')
+        ->and($issue->assigned_to_me_at)->toBeNull()
+        ->and($issue->snoozed_until->toDateTimeString())->toBe($snoozedUntil->toDateTimeString());
 });
 
 test('a successful sync stamps the synced time and clears any previous error', function () {

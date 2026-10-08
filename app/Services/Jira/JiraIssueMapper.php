@@ -120,9 +120,10 @@ class JiraIssueMapper
     }
 
     /**
-     * Parse an optional Jira timestamp string into a Carbon instance.
+     * Parse an optional Jira timestamp string into a Carbon instance in the
+     * application timezone.
      */
-    private static function parseDate(mixed $value): ?CarbonInterface
+    public static function parseDate(mixed $value): ?CarbonInterface
     {
         if (!is_string($value) || $value === '') {
             return null;

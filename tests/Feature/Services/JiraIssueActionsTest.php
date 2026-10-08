@@ -198,46 +198,89 @@ test('refreshing an issue keeps its sprints and pull request summary when the fi
         ->and($issue->pr_count)->toBe(2);
 });
 
-test('refreshing a snoozed issue clears the snooze when jira was updated after snoozing', function () {
-    $user = User::factory()->withJiraConnection()->create();
+test('assigning an issue to me stamps it and clears its active snooze', function () {
+    $this->freezeTime();
+
+    $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
     $issue = JiraIssue::factory()->for($user)->snoozed()->create([
         'jira_key' => 'PROJ-10',
-        'assignee_account_id' => null,
-        'jira_updated_at' => '2024-01-01 00:00:00',
+        'assignee_account_id' => 'acc-other',
     ]);
 
     Http::fake([
         '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-10/assignee' => Http::response([], 204),
-        '*/rest/api/3/issue/PROJ-10*' => Http::response(issuePayload('PROJ-10')),
+        '*/rest/api/3/issue/PROJ-10*' => Http::response(issuePayload('PROJ-10', [
+            'assignee' => ['accountId' => 'acc-me', 'displayName' => 'Me'],
+        ])),
     ]);
 
-    JiraIssueActions::forUser($user)->assign($issue, 'acc-9');
+    JiraIssueActions::forUser($user)->assign($issue, 'acc-me');
 
-    expect($issue->fresh()->snoozed_until)->toBeNull();
+    $issue->refresh();
+
+    expect($issue->assigned_to_me_at->toDateTimeString())->toBe(now()->toDateTimeString())
+        ->and($issue->snoozed_until)->toBeNull();
 });
 
-test('refreshing a snoozed issue preserves the snooze when jira updated timestamp is unchanged', function () {
-    $user = User::factory()->withJiraConnection()->create();
+test('refreshing an issue already assigned to me does not stamp it and keeps its snooze despite newer jira activity', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
 
     $snoozedUntil = now()->addHour();
 
     $issue = JiraIssue::factory()->for($user)->snoozed($snoozedUntil)->create([
         'jira_key' => 'PROJ-11',
-        'assignee_account_id' => null,
-        'jira_updated_at' => '2024-02-01 00:00:00',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+        'assignee_account_id' => 'acc-me',
+        'jira_updated_at' => '2024-01-01 00:00:00',
+    ]);
+
+    JiraTransitionsCache::put($user, 'Task', '1', [
+        ['id' => '31', 'to_id' => '2', 'to_name' => 'In Progress'],
     ]);
 
     Http::fake([
         '*/rest/api/3/field' => Http::response([]),
-        '*/rest/api/3/issue/PROJ-11/assignee' => Http::response([], 204),
-        '*/rest/api/3/issue/PROJ-11*' => Http::response(issuePayload('PROJ-11')),
+        '*/rest/api/3/issue/PROJ-11/transitions' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-11*' => Http::response(issuePayload('PROJ-11', [
+            'assignee' => ['accountId' => 'acc-me', 'displayName' => 'Me'],
+        ])),
+    ]);
+
+    JiraIssueActions::forUser($user)->transition($issue, '2');
+
+    $issue->refresh();
+
+    expect($issue->assigned_to_me_at)->toBeNull()
+        ->and($issue->jira_updated_at->toDateTimeString())->toBe('2024-02-01 00:00:00')
+        ->and($issue->snoozed_until->toDateTimeString())->toBe($snoozedUntil->toDateTimeString());
+});
+
+test('assigning an issue to someone else does not stamp it and keeps its snooze', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
+
+    $snoozedUntil = now()->addHour();
+
+    $issue = JiraIssue::factory()->for($user)->snoozed($snoozedUntil)->create([
+        'jira_key' => 'PROJ-14',
+        'assignee_account_id' => null,
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
+        '*/rest/api/3/issue/PROJ-14/assignee' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-14*' => Http::response(issuePayload('PROJ-14', [
+            'assignee' => ['accountId' => 'acc-9', 'displayName' => 'Assignee Nine'],
+        ])),
     ]);
 
     JiraIssueActions::forUser($user)->assign($issue, 'acc-9');
 
-    expect($issue->fresh()->snoozed_until->toDateTimeString())
-        ->toBe($snoozedUntil->toDateTimeString());
+    $issue->refresh();
+
+    expect($issue->assigned_to_me_at)->toBeNull()
+        ->and($issue->snoozed_until->toDateTimeString())->toBe($snoozedUntil->toDateTimeString());
 });
 
 test('addConcerning re-surfaces an existing task without contacting jira', function () {

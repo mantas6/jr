@@ -42,7 +42,7 @@ final class JiraClient
     private const DEVELOPMENT_FIELD_SCHEMA = 'com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf';
 
     /**
-     * The maximum number of issues requested per search page.
+     * The maximum number of issues (or comments) requested per page.
      */
     private const MAX_RESULTS = 100;
 
@@ -151,6 +151,34 @@ final class JiraClient
                 'expand' => 'renderedFields',
             ],
         ))->json();
+    }
+
+    /**
+     * Fetch every comment on an issue, following Jira's offset pagination.
+     *
+     * Used when an embedded `comment` field was truncated (its `total` exceeds
+     * the number of comments returned).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function getAllComments(string $key): array
+    {
+        $comments = [];
+        $startAt = 0;
+
+        do {
+            $page = $this->send(fn (PendingRequest $request): Response => $request->get(
+                "/rest/api/3/issue/{$key}/comment",
+                ['startAt' => $startAt, 'maxResults' => self::MAX_RESULTS],
+            ))->json();
+
+            $pageComments = array_values(array_filter((array) ($page['comments'] ?? []), is_array(...)));
+            $comments = [...$comments, ...$pageComments];
+            $startAt += count($pageComments);
+            $total = (int) ($page['total'] ?? 0);
+        } while ($pageComments !== [] && $startAt < $total);
+
+        return $comments;
     }
 
     /**

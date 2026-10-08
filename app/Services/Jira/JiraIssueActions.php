@@ -142,6 +142,9 @@ final class JiraIssueActions
     /**
      * Re-fetch the issue from Jira and update the local row from the mapped payload.
      *
+     * When the refresh newly assigns the issue to the user, `assigned_to_me_at`
+     * is stamped (re-surfacing a dismissed task) and any active snooze is cleared.
+     *
      * Sprint and pull request columns are left untouched when their custom
      * field id cannot be resolved, so a failed field lookup never wipes them.
      */
@@ -162,8 +165,12 @@ final class JiraIssueActions
             unset($attributes['pr_state'], $attributes['pr_count']);
         }
 
-        if (JiraIssue::shouldUnsnooze($issue->snoozed_until, $issue->jira_updated_at, $attributes['jira_updated_at'])) {
-            $attributes['snoozed_until'] = null;
+        if (JiraIssue::becameAssignedToMe($issue->assignee_account_id, $attributes['assignee_account_id'], $this->user)) {
+            $attributes['assigned_to_me_at'] = Carbon::now();
+
+            if ($issue->isSnoozed()) {
+                $attributes['snoozed_until'] = null;
+            }
         }
 
         $issue->update($attributes);

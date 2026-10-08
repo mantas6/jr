@@ -206,7 +206,8 @@ class ViewJiraIssue extends ViewRecord
     }
 
     /**
-     * Dismiss the issue until Jira reports newer activity.
+     * Dismiss the issue until you are newly assigned or newly mentioned in a
+     * comment.
      */
     private function dismissAction(): Action
     {

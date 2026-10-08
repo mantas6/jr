@@ -53,8 +53,10 @@ class JiraIssueFactory extends Factory
             'snoozed_until' => null,
             'dismissed_at' => null,
             'last_viewed_at' => null,
+            'assigned_to_me_at' => null,
             'mentions_me' => false,
             'mentions_scanned_at' => null,
+            'last_mentioned_at' => null,
             'jira_url' => $siteUrl.'/browse/'.$jiraKey,
             'jira_created_at' => fake()->dateTimeBetween('-1 year', '-1 month'),
             'jira_updated_at' => fake()->dateTimeBetween('-1 month', 'now'),
@@ -178,6 +180,29 @@ class JiraIssueFactory extends Factory
         return $this->state(fn (array $attributes): array => [
             'mentions_me' => true,
             'mentions_scanned_at' => now(),
+        ]);
+    }
+
+    /**
+     * Mark the issue as newly assigned to the user at the given time (defaults to now).
+     */
+    public function assignedToMeAt(?DateTimeInterface $at = null): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'assigned_to_me_at' => $at ?? now(),
+        ]);
+    }
+
+    /**
+     * Mark the issue as mentioning the user in a comment posted at the given time
+     * (defaults to now).
+     */
+    public function mentionedAt(?DateTimeInterface $at = null): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'mentions_me' => true,
+            'mentions_scanned_at' => now(),
+            'last_mentioned_at' => $at ?? now(),
         ]);
     }
 }

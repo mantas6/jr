@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Models\JiraIssue;
 use App\Models\User;
+use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraMentionDetector;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -19,6 +20,10 @@ use Illuminate\Support\Carbon;
  * Scan the user's recently updated Jira issues for `@mentions` of their own
  * account in the description or comments, and record the result locally so the
  * "Concerning Tasks" list can surface them without hitting Jira per row.
+ *
+ * The time of the newest comment mention by someone else is kept in
+ * `last_mentioned_at`, which re-surfaces a dismissed task and clears an active
+ * snooze when it moves forward.
  */
 #[UniqueFor(900)]
 class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
@@ -85,8 +90,19 @@ class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
         do {
             $page = $client->searchIssues($jql, $nextPageToken, self::MENTION_FIELDS);
 
+            /** @var \Illuminate\Support\Collection<string, JiraIssue> $existing */
+            $existing = JiraIssue::query()
+                ->where('user_id', $this->user->id)
+                ->whereIn('jira_id', array_map(fn (array $issue): string => (string) data_get($issue, 'id'), $page['issues']))
+                ->get(['id', 'jira_id', 'snoozed_until', 'last_mentioned_at'])
+                ->keyBy('jira_id');
+
             foreach ($page['issues'] as $issue) {
-                $this->scanIssue($issue, $accountId, $now);
+                $current = $existing->get((string) data_get($issue, 'id'));
+
+                if ($current !== null) {
+                    $this->scanIssue($client, $current, $issue, $accountId, $now);
+                }
             }
 
             $nextPageToken = $page['nextPageToken'] ?? null;
@@ -97,25 +113,60 @@ class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
     /**
      * Detect a mention within a single issue payload and persist the result.
      *
+     * `mentions_me` covers the description and every comment; only comment
+     * mentions by someone else advance `last_mentioned_at`, which never moves
+     * backward.
+     *
      * @param  array<string, mixed>  $issue
      */
-    private function scanIssue(array $issue, string $accountId, Carbon $now): void
+    private function scanIssue(JiraClient $client, JiraIssue $current, array $issue, string $accountId, Carbon $now): void
     {
-        $jiraId = (string) data_get($issue, 'id');
+        $comments = $this->comments($client, $issue);
 
-        if ($jiraId === '') {
-            return;
+        $attributes = [
+            'mentions_me' => JiraMentionDetector::mentions(data_get($issue, 'fields.description'), $accountId)
+                || JiraMentionDetector::mentions($comments, $accountId),
+            'mentions_scanned_at' => $now,
+        ];
+
+        $mentionedAt = JiraMentionDetector::latestCommentMentionAt($comments, $accountId)?->startOfSecond();
+
+        if ($mentionedAt !== null && ($current->last_mentioned_at === null || $mentionedAt->gt($current->last_mentioned_at))) {
+            $attributes['last_mentioned_at'] = $mentionedAt;
+
+            if ($current->isSnoozed()) {
+                $attributes['snoozed_until'] = null;
+            }
         }
 
-        $mentionsMe = JiraMentionDetector::mentions(data_get($issue, 'fields.description'), $accountId)
-            || JiraMentionDetector::mentions(data_get($issue, 'fields.comment.comments'), $accountId);
-
         JiraIssue::query()
-            ->where('user_id', $this->user->id)
-            ->where('jira_id', $jiraId)
-            ->update([
-                'mentions_me' => $mentionsMe,
-                'mentions_scanned_at' => $now,
-            ]);
+            ->whereKey($current->id)
+            ->update($attributes);
+    }
+
+    /**
+     * The issue's comments. Search results embed only the oldest comments, so
+     * when Jira reports more than were returned the full list is fetched
+     * (falling back to the embedded comments if that request fails).
+     *
+     * @param  array<string, mixed>  $issue
+     * @return list<array<string, mixed>>
+     */
+    private function comments(JiraClient $client, array $issue): array
+    {
+        $comments = data_get($issue, 'fields.comment.comments');
+        $comments = is_array($comments) ? array_values(array_filter($comments, is_array(...))) : [];
+
+        $total = (int) data_get($issue, 'fields.comment.total', count($comments));
+
+        if ($total <= count($comments)) {
+            return $comments;
+        }
+
+        try {
+            return $client->getAllComments((string) (data_get($issue, 'key') ?: data_get($issue, 'id')));
+        } catch (JiraApiException) {
+            return $comments;
+        }
     }
 }
