@@ -170,16 +170,16 @@ class JiraIssueMapper
     }
 
     /**
-     * Jira's stale development field can list linked commits but omit real PRs.
-     * Only those issues need an additional live summary request during sync.
+     * Refresh stale PR data and linked commits whose cached summary omits PRs.
      */
     public static function needsPullRequestRefresh(mixed $value): bool
     {
+        $decoded = self::decodeDevelopmentField($value);
+
         if (self::extractPullRequestSummary($value)['count'] !== null) {
-            return false;
+            return data_get($decoded, 'isStale') === true;
         }
 
-        $decoded = self::decodeDevelopmentField($value);
         $repositoryCount = data_get($decoded, 'cachedValue.summary.repository.overall.count')
             ?? data_get($decoded, 'summary.repository.overall.count');
 

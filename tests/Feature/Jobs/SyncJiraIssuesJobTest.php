@@ -165,11 +165,15 @@ test('it syncs the pull request summary using the auto-detected development fiel
     Http::assertSent(fn (Request $request) => isset($request['fields']) && str_contains((string) $request['fields'], 'customfield_10000'));
 });
 
-test('sync uses the live PR summary when cached development data only includes commits', function (int $httpStatus, ?string $state, ?int $count) {
+test('sync replaces stale or incomplete PR data with the live summary', function (int $httpStatus, ?string $state, ?int $count, bool $stale) {
     $user = syncUser();
     $issue = jiraIssuePayload('1001', 'PROJ-1', 'First issue');
     $issue['fields']['customfield_10000'] = '{repository={count=7}, json='.json_encode([
-        'cachedValue' => ['summary' => ['repository' => ['overall' => ['count' => 7]]]],
+        'cachedValue' => ['summary' => [
+            'repository' => ['overall' => ['count' => 7]],
+            'pullrequest' => ['overall' => ['count' => $stale ? 1 : 0, 'state' => 'MERGED']],
+        ]],
+        'isStale' => $stale,
     ], JSON_THROW_ON_ERROR).'}';
 
     Http::fake([
@@ -179,7 +183,7 @@ test('sync uses the live PR summary when cached development data only includes c
         '*/rest/api/3/search/jql*' => Http::response(['issues' => [$issue], 'isLast' => true]),
         '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
         '*/rest/dev-status/1.0/issue/summary*' => Http::response([
-            'summary' => ['pullrequest' => ['overall' => ['count' => 2, 'state' => 'MERGED']]],
+            'summary' => ['pullrequest' => ['overall' => ['count' => 2, 'state' => $state]]],
         ], $httpStatus),
     ]);
 
@@ -194,8 +198,10 @@ test('sync uses the live PR summary when cached development data only includes c
     Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/dev-status/1.0/issue/summary')
         && $request['issueId'] === '1001');
 })->with([
-    'live summary has missing PRs' => [200, 'MERGED', 2],
-    'live summary unavailable still syncs issue' => [403, null, null],
+    'live summary has missing PRs' => [200, 'MERGED', 2, false],
+    'live summary unavailable still syncs issue' => [403, null, null, false],
+    'stale merged summary now has an open PR' => [200, 'OPEN', 2, true],
+    'stale merged summary with unavailable live data is not shown as merged' => [403, null, null, true],
 ]);
 
 test('a sync without a sprint field stores null sprints', function () {

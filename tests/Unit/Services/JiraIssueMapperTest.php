@@ -333,12 +333,13 @@ test('map reads the JSON embedded in Jira development field text', function () {
         ->and($row['pr_count'])->toBe(5);
 });
 
-test('live PR summary refresh is only needed for missing PR data with linked commits', function (mixed $value, bool $expected) {
+test('live PR summary refresh is needed for stale or missing PR data with linked activity', function (mixed $value, bool $expected) {
     expect(JiraIssueMapper::needsPullRequestRefresh($value))->toBe($expected);
 })->with([
     'no development data' => [null, false],
     'no linked activity' => [json_encode(['summary' => []], JSON_THROW_ON_ERROR), false],
     'complete PR summary' => [developmentSummary(2, 'MERGED'), false],
+    'stale merged summary' => [str_replace('"isStale":false', '"isStale":true', developmentSummary(1, 'MERGED')), true],
     'commits but no cached PRs' => [json_encode(['summary' => ['repository' => ['overall' => ['count' => 7]]]], JSON_THROW_ON_ERROR), true],
 ]);
 

@@ -66,7 +66,7 @@ class JiraIssueInfolist
                             ->state(fn (JiraIssue $record): array => $record->sprints ?? []),
                         TextEntry::make('pr_state')
                             ->label('Pull requests')
-                            ->state(fn (JiraIssue $record): ?string => $record->pr_state?->describe($record->pr_count))
+                            ->state(fn (ViewJiraIssue $livewire): ?string => $livewire->pullRequestSummary())
                             ->badge()
                             ->color(fn (JiraIssue $record): string => $record->pr_state?->color() ?? 'gray')
                             ->placeholder('None'),

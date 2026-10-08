@@ -733,7 +733,7 @@ test('the view page shows pull request status, links, branches and reviewers', f
         ->toContain('Bob Reviewer (approved)')
         ->not->toContain('<script>alert(1)</script>');
 
-    Http::assertSentCount(3);
+    Http::assertSentCount(5);
 });
 
 test('a development API failure preserves task content and the synced pull request summary', function () {
@@ -757,6 +757,39 @@ test('a development API failure preserves task content and the synced pull reque
     expect($component->effects['partials']['schema.infolist.jiraContent'])
         ->toContain('Still readable')
         ->toContain('Pull request details unavailable');
+});
+
+test('an open PR overrides a stale merged badge and updates the list status', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->withPullRequest('MERGED', 1)->create([
+        'jira_key' => 'SUPER-4419',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/SUPER-4419*' => Http::response(['fields' => []]),
+        '*/rest/dev-status/1.0/issue/summary*' => Http::response([
+            'summary' => ['pullrequest' => ['byInstanceType' => ['bitbucket' => ['count' => 2]]]],
+        ]),
+        '*/rest/dev-status/1.0/issue/detail*' => Http::response([
+            'detail' => [['pullRequests' => [
+                ['id' => '934', 'status' => 'MERGED', 'name' => 'Merged change'],
+                ['id' => '937', 'status' => 'OPEN', 'name' => 'Unmerged change'],
+            ]]],
+        ]),
+    ]);
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertSee('2 pull requests, open')
+        ->assertDontSee('1 pull request, merged');
+
+    $this->assertDatabaseHas('jira_issues', ['id' => $issue->id, 'pr_state' => 'OPEN', 'pr_count' => 2]);
+
+    livewire(ListJiraIssues::class)
+        ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getColor($column->getState()) === 'info'
+            && $column->getTooltip() === '2 pull requests, open', $issue->fresh());
 });
 
 test('the view page renders each copy-as-markdown button in its header with its own content', function () {

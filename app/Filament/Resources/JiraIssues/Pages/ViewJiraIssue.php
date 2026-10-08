@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraIssueContentMapper;
+use App\Services\Jira\JiraPullRequestState;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -100,12 +101,33 @@ class ViewJiraIssue extends ViewRecord
         }
 
         try {
-            return $this->pullRequestDetails = JiraIssueContentMapper::mapPullRequests(
+            $this->pullRequestDetails = JiraIssueContentMapper::mapPullRequests(
                 JiraClient::forUser($this->currentUser())->getPullRequests($this->currentRecord()->jira_id),
             );
+
+            if ($this->pullRequestDetails !== []) {
+                $record = $this->currentRecord();
+                $record->fill([
+                    'pr_state' => JiraPullRequestState::fromStatuses(array_column($this->pullRequestDetails, 'status')),
+                    'pr_count' => count($this->pullRequestDetails),
+                ]);
+
+                if ($record->isDirty(['pr_state', 'pr_count'])) {
+                    $record->saveQuietly();
+                }
+            }
+
+            return $this->pullRequestDetails;
         } catch (JiraApiException) {
             return $this->pullRequestDetails = [];
         }
+    }
+
+    public function pullRequestSummary(): ?string
+    {
+        $this->pullRequests();
+
+        return $this->currentRecord()->pr_state?->describe($this->currentRecord()->pr_count);
     }
 
     /**

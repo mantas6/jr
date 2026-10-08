@@ -17,6 +17,28 @@ enum JiraPullRequestState: string
     case Declined = 'DECLINED';
 
     /**
+     * Open requests take priority; only an entirely merged set is successful.
+     *
+     * @param  list<string>  $statuses
+     */
+    public static function fromStatuses(array $statuses): ?self
+    {
+        $statuses = array_map(mb_strtoupper(...), $statuses);
+
+        if (in_array(self::Open->value, $statuses, true)) {
+            return self::Open;
+        }
+
+        if (in_array(self::Declined->value, $statuses, true)) {
+            return self::Declined;
+        }
+
+        return $statuses !== [] && array_diff($statuses, [self::Merged->value]) === []
+            ? self::Merged
+            : null;
+    }
+
+    /**
      * The Filament color used for the state's icon.
      */
     public function color(): string
