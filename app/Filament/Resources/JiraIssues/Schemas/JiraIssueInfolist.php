@@ -64,12 +64,6 @@ class JiraIssueInfolist
                             ->color('info')
                             ->placeholder('—')
                             ->state(fn (JiraIssue $record): array => $record->sprints ?? []),
-                        TextEntry::make('pr_state')
-                            ->label('Pull requests')
-                            ->state(fn (ViewJiraIssue $livewire): ?string => $livewire->pullRequestSummary())
-                            ->badge()
-                            ->color(fn (JiraIssue $record): string => $record->pr_state?->color() ?? 'gray')
-                            ->placeholder('None'),
                         TextEntry::make('summary')
                             ->columnSpanFull(),
                     ]),
@@ -148,7 +142,15 @@ class JiraIssueInfolist
                                     ]),
                                 Section::make('Pull requests')
                                     ->columnSpanFull()
+                                    ->collapsed()
                                     ->visible(fn (JiraIssue $record): bool => (int) $record->pr_count > 0)
+                                    ->afterHeader([
+                                        TextEntry::make('pull_request_summary')
+                                            ->hiddenLabel()
+                                            ->state(fn (ViewJiraIssue $livewire): ?string => $livewire->pullRequestSummary())
+                                            ->badge()
+                                            ->color(fn (JiraIssue $record): string => $record->pr_state?->color() ?? 'gray'),
+                                    ])
                                     ->schema([
                                         RepeatableEntry::make('pull_requests')
                                             ->hiddenLabel()

@@ -688,7 +688,7 @@ test('an Epic child lookup failure preserves the description and comments', func
         ->not->toContain('Subtasks');
 });
 
-test('the view page shows pull request status, links, branches and reviewers', function () {
+test('the view page puts the PR summary in a collapsed section header with expandable details', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
     $issue = JiraIssue::factory()->for($user)->withPullRequest('MERGED', 1)->create([
@@ -720,10 +720,23 @@ test('the view page shows pull request status, links, branches and reviewers', f
     ]);
 
     $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
-        ->assertSee('1 pull request, merged')
+        ->assertDontSee('Pull requests')
+        ->assertDontSee('1 pull request, merged')
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    expect($component->effects['partials']['schema.infolist.jiraContent'])
+    $partial = $component->effects['partials']['schema.infolist.jiraContent'];
+
+    preg_match_all('/<section\b(.*?)<header\b[^>]*>(.*?)<\/header>/s', $partial, $sections, PREG_SET_ORDER);
+    $prSections = array_values(array_filter($sections, fn (array $section): bool => str_contains($section[2], 'Pull requests')));
+
+    expect($prSections)->toHaveCount(1);
+    expect($prSections[0][1])->toMatch('/isCollapsed:\s*true/')
+        ->toContain('fi-collapsible');
+    expect($prSections[0][2])->toContain('fi-section-header-after-ctn')
+        ->toContain('1 pull request, merged')
+        ->toContain('aria-expanded="false"');
+
+    expect($partial)
         ->toContain('#17 Ship &lt;script&gt;alert(1)&lt;/script&gt;')
         ->toContain('href="https://bitbucket.org/example/app/pull-requests/17"')
         ->toContain('MERGED')
@@ -733,7 +746,7 @@ test('the view page shows pull request status, links, branches and reviewers', f
         ->toContain('Bob Reviewer (approved)')
         ->not->toContain('<script>alert(1)</script>');
 
-    Http::assertSentCount(5);
+    Http::assertSentCount(3);
 });
 
 test('a development API failure preserves task content and the synced pull request summary', function () {
@@ -751,10 +764,10 @@ test('a development API failure preserves task content and the synced pull reque
     ]);
 
     $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
-        ->assertSee('2 pull requests, open')
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
     expect($component->effects['partials']['schema.infolist.jiraContent'])
+        ->toContain('2 pull requests, open')
         ->toContain('Still readable')
         ->toContain('Pull request details unavailable');
 });
@@ -781,9 +794,12 @@ test('an open PR overrides a stale merged badge and updates the list status', fu
         ]),
     ]);
 
-    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
-        ->assertSee('2 pull requests, open')
-        ->assertDontSee('1 pull request, merged');
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    expect($component->effects['partials']['schema.infolist.jiraContent'])
+        ->toContain('2 pull requests, open')
+        ->not->toContain('1 pull request, merged');
 
     $this->assertDatabaseHas('jira_issues', ['id' => $issue->id, 'pr_state' => 'OPEN', 'pr_count' => 2]);
 
