@@ -11,6 +11,7 @@ use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraIssueActions;
 use App\Services\Jira\JiraPriority;
+use App\Services\Jira\JiraStatus;
 use App\Services\Jira\JiraTransitionsCache;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
@@ -57,7 +58,7 @@ class JiraIssuesTable
                 TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->color(fn (JiraIssue $record): string => self::statusColor($record->status_category)),
+                    ->color(fn (JiraIssue $record): string => JiraStatus::color($record->status, $record->status_category)),
                 TextColumn::make('assignee_name')
                     ->label('Assignee')
                     ->placeholder('Unassigned')
@@ -387,18 +388,6 @@ class JiraIssuesTable
         }
 
         return $record->assignee_name ?? (string) $value;
-    }
-
-    /**
-     * Map a Jira status category to a badge color.
-     */
-    private static function statusColor(?string $statusCategory): string
-    {
-        return match ($statusCategory) {
-            'Done' => 'success',
-            'In Progress' => 'info',
-            default => 'gray',
-        };
     }
 
     /**

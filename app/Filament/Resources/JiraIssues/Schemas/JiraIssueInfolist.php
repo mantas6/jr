@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraPriority;
+use App\Services\Jira\JiraStatus;
 use App\Services\Jira\JiraTextToAdf;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
@@ -44,7 +45,7 @@ class JiraIssueInfolist
                             ->color(fn (JiraIssue $record): string => JiraIssuesTable::issueTypeColor($record->issue_type)),
                         TextEntry::make('status')
                             ->badge()
-                            ->color(fn (JiraIssue $record): string => self::statusColor($record->status_category)),
+                            ->color(fn (JiraIssue $record): string => JiraStatus::color($record->status, $record->status_category)),
                         TextEntry::make('priority')
                             ->badge()
                             ->color(fn (JiraIssue $record): string => JiraPriority::color($record->priority))
@@ -217,17 +218,5 @@ class JiraIssueInfolist
     private static function copyMarkdownScript(string $markdown): string
     {
         return 'window.navigator.clipboard.writeText('.Js::from($markdown).'); $tooltip('.Js::from('Copied').', { theme: $store.theme })';
-    }
-
-    /**
-     * Map a Jira status category to a badge color.
-     */
-    private static function statusColor(?string $statusCategory): string
-    {
-        return match ($statusCategory) {
-            'Done' => 'success',
-            'In Progress' => 'info',
-            default => 'gray',
-        };
     }
 }
