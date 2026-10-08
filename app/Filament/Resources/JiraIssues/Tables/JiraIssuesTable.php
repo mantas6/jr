@@ -44,7 +44,6 @@ class JiraIssuesTable
                     ->label('Key')
                     ->url(fn (JiraIssue $record): string => $record->jira_url, shouldOpenInNewTab: true)
                     ->color('primary')
-                    ->suffix(fn (JiraIssue $record): ?HtmlString => self::unreadMarker($record))
                     ->copyable()
                     ->copyableState(fn (JiraIssue $record): string => $record->jira_key)
                     ->copyMessage('Key copied')
@@ -91,6 +90,7 @@ class JiraIssuesTable
                 TextColumn::make('jira_updated_at')
                     ->label('Jira updated')
                     ->formatStateUsing(fn (JiraIssue $record): string => $record->jira_updated_at->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE, short: true))
+                    ->suffix(fn (JiraIssue $record): ?HtmlString => self::unreadMarker($record))
                     ->tooltip(fn (JiraIssue $record): string => $record->jira_updated_at->toDayDateTimeString())
                     ->sortable(),
                 TextColumn::make('last_synced_at')
@@ -273,7 +273,7 @@ class JiraIssuesTable
     }
 
     /**
-     * A red asterisk shown after the key while the task has Jira activity the
+     * A red asterisk shown after the Jira update time while the task has activity the
      * user has not seen yet (never opened, or updated since last opened).
      * Mirrors the concerning page's "Unread" tab via {@see JiraIssue::isUnread()}.
      */
@@ -283,7 +283,7 @@ class JiraIssuesTable
             return null;
         }
 
-        return new HtmlString(' <span class="font-bold text-danger-600 dark:text-danger-400" title="Updated since you last opened it">*</span>');
+        return new HtmlString(' <span style="color: light-dark(var(--danger-600), var(--danger-400)); font-weight: 700" title="Updated since you last opened it">*</span>');
     }
 
     /**
