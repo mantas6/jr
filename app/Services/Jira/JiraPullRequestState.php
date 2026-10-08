@@ -70,7 +70,7 @@ enum JiraPullRequestState: string
     public function color(): string
     {
         return match ($this) {
-            self::Open => 'success',
+            self::Open => 'warning',
             self::Draft => 'info',
             self::Merged => 'success',
             self::Declined => 'danger',
