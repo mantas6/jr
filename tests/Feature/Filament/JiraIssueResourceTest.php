@@ -11,6 +11,7 @@ use App\Services\Jira\JiraTransitionsCache;
 use Filament\Actions\Testing\TestAction;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -834,6 +835,25 @@ test('the view page can toggle the important flag without a jira connection', fu
         ->assertNotified('Marked important');
 
     expect($issue->fresh()->is_important)->toBeTrue();
+});
+
+test('opening the view page marks the task as viewed', function () {
+    $this->travelTo(Carbon::parse('2026-03-10 12:00:00'));
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'last_viewed_at' => null,
+        'jira_updated_at' => now()->subDay(),
+    ]);
+
+    Http::fake();
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()]);
+
+    expect($issue->fresh()->last_viewed_at->toDateTimeString())->toBe('2026-03-10 12:00:00')
+        ->and($issue->fresh()->isUnread())->toBeFalse();
 });
 
 test('the view page can snooze the task', function () {

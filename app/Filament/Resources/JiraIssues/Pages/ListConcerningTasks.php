@@ -8,10 +8,12 @@ use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\JiraIssueActions;
 use App\Services\Jira\JiraIssueReferenceParser;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
+use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -22,6 +24,39 @@ class ListConcerningTasks extends ListRecords
     protected static string $resource = JiraIssueResource::class;
 
     protected static ?string $title = 'Concerning Tasks';
+
+    /**
+     * Split the concerning list into active, unread (active and not viewed
+     * since Jira's last update) and snoozed tasks, each with a count badge.
+     *
+     * @return array<string, Tab>
+     */
+    public function getTabs(): array
+    {
+        $activeQuery = $this->activeTabQuery(...);
+        $unreadQuery = $this->unreadTabQuery(...);
+        $snoozedQuery = $this->snoozedTabQuery(...);
+
+        $unreadCount = $this->tabCount($unreadQuery);
+
+        return [
+            'active' => Tab::make('Active')
+                ->modifyQueryUsing($activeQuery)
+                ->badge($this->tabCount($activeQuery)),
+            'unread' => Tab::make('Unread')
+                ->modifyQueryUsing($unreadQuery)
+                ->badge($unreadCount)
+                ->badgeColor($unreadCount > 0 ? 'danger' : null),
+            'snoozed' => Tab::make('Snoozed')
+                ->modifyQueryUsing($snoozedQuery)
+                ->badge($this->tabCount($snoozedQuery)),
+        ];
+    }
+
+    public function getDefaultActiveTab(): string
+    {
+        return 'active';
+    }
 
     /**
      * @return array<int, Action>
@@ -36,15 +71,59 @@ class ListConcerningTasks extends ListRecords
     /**
      * Restrict the table to tasks that currently need the user's attention.
      *
-     * Snoozed tasks are hidden by the table's "Snooze" filter (which defaults to
-     * "Not snoozed"), so the base query stays snooze-agnostic to let that filter
-     * reveal snoozed tasks on demand.
+     * The base query stays snooze-agnostic; the "Active", "Unread" and
+     * "Snoozed" tabs narrow it further.
      *
-     * @return Builder<JiraIssue>|null
+     * @return Builder<JiraIssue>
      */
-    protected function getTableQuery(): ?Builder
+    protected function getTableQuery(): Builder
     {
         return JiraIssueResource::getEloquentQuery()->concerning($this->currentUser());
+    }
+
+    /**
+     * Count the page's base query after applying a tab's query modifier. Tabs
+     * are built once per request (see `getCachedTabs()`), so each count runs once.
+     *
+     * @param  Closure(Builder<JiraIssue>): Builder<JiraIssue>  $modifyQuery
+     */
+    private function tabCount(Closure $modifyQuery): int
+    {
+        return $modifyQuery($this->getTableQuery())->count();
+    }
+
+    /**
+     * Concerning tasks that are not currently snoozed (an expired snooze counts
+     * as active).
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    private function activeTabQuery(Builder $query): Builder
+    {
+        return $query->notSnoozed();
+    }
+
+    /**
+     * Active tasks not viewed since their last Jira update.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    private function unreadTabQuery(Builder $query): Builder
+    {
+        return $query->notSnoozed()->unread();
+    }
+
+    /**
+     * Concerning tasks with a snooze still in the future.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    private function snoozedTabQuery(Builder $query): Builder
+    {
+        return $query->snoozed();
     }
 
     /**

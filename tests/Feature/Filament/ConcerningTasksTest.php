@@ -31,40 +31,79 @@ test('the concerning page only shows tasks that need attention', function () {
         ->assertCanNotSeeTableRecords([$quiet]);
 });
 
-test('the concerning page hides snoozed tasks by default', function () {
+test('the concerning page defaults to the active tab, which hides snoozed tasks', function () {
     $active = JiraIssue::factory()->for($this->user)->important()->create();
+    $expiredSnooze = JiraIssue::factory()->for($this->user)->important()->expiredSnooze()->create();
     $snoozed = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
 
     livewire(ListConcerningTasks::class)
-        ->assertCanSeeTableRecords([$active])
+        ->assertSet('activeTab', 'active')
+        ->assertCanSeeTableRecords([$active, $expiredSnooze])
         ->assertCanNotSeeTableRecords([$snoozed]);
 });
 
-test('the snooze filter can reveal only snoozed tasks on the concerning page', function () {
+test('the snoozed tab shows only snoozed tasks', function () {
     $active = JiraIssue::factory()->for($this->user)->important()->create();
+    $expiredSnooze = JiraIssue::factory()->for($this->user)->important()->expiredSnooze()->create();
     $snoozed = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
 
     livewire(ListConcerningTasks::class)
-        ->filterTable('snoozed', 'snoozed')
+        ->set('activeTab', 'snoozed')
         ->assertCanSeeTableRecords([$snoozed])
-        ->assertCanNotSeeTableRecords([$active]);
+        ->assertCanNotSeeTableRecords([$active, $expiredSnooze]);
 });
 
-test('clearing the snooze filter shows both active and snoozed concerning tasks', function () {
-    $active = JiraIssue::factory()->for($this->user)->important()->create();
-    $snoozed = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+test('the unread tab shows active tasks not viewed since their last Jira update', function () {
+    $this->travelTo(Carbon::parse('2026-03-10 12:00:00'));
+
+    $neverViewed = JiraIssue::factory()->for($this->user)->important()->create([
+        'jira_updated_at' => now()->subDay(),
+    ]);
+    $updatedSinceViewed = JiraIssue::factory()->for($this->user)->important()->viewed(now()->subDays(2))->create([
+        'jira_updated_at' => now()->subDay(),
+    ]);
+    $viewedAfterUpdate = JiraIssue::factory()->for($this->user)->important()->viewed(now()->subHour())->create([
+        'jira_updated_at' => now()->subDay(),
+    ]);
+    $snoozedUnread = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create([
+        'jira_updated_at' => now()->subDay(),
+    ]);
 
     livewire(ListConcerningTasks::class)
-        ->filterTable('snoozed', null)
-        ->assertCanSeeTableRecords([$active, $snoozed]);
+        ->set('activeTab', 'unread')
+        ->assertCanSeeTableRecords([$neverViewed, $updatedSinceViewed])
+        ->assertCanNotSeeTableRecords([$viewedAfterUpdate, $snoozedUnread]);
 });
 
-test('the snooze filter is hidden on the full task list', function () {
-    livewire(ListConcerningTasks::class)
-        ->assertTableFilterVisible('snoozed');
+test('each tab badge counts the current user\'s concerning tasks in that tab', function () {
+    JiraIssue::factory()->for($this->user)->important()->create();
+    JiraIssue::factory()->for($this->user)->important()->viewed()->create([
+        'jira_updated_at' => now()->subHour(),
+    ]);
+    JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+    JiraIssue::factory()->for($this->user)->create([
+        'assignee_account_id' => 'acc-someone',
+        'mentions_me' => false,
+    ]);
+    JiraIssue::factory()->for(User::factory()->create(['jira_account_id' => 'acc-other']))->important()->create();
 
-    livewire(ListJiraIssues::class)
-        ->assertTableFilterHidden('snoozed');
+    $tabs = livewire(ListConcerningTasks::class)->instance()->getCachedTabs();
+
+    expect($tabs['active']->getBadge())->toBe('2')
+        ->and($tabs['unread']->getBadge())->toBe('1')
+        ->and($tabs['unread']->getBadgeColor())->toBe('danger')
+        ->and($tabs['snoozed']->getBadge())->toBe('1');
+});
+
+test('the unread tab badge keeps the default color when nothing is unread', function () {
+    JiraIssue::factory()->for($this->user)->important()->viewed()->create([
+        'jira_updated_at' => now()->subHour(),
+    ]);
+
+    $tabs = livewire(ListConcerningTasks::class)->instance()->getCachedTabs();
+
+    expect($tabs['unread']->getBadge())->toBe('0')
+        ->and($tabs['unread']->getBadgeColor())->toBeNull();
 });
 
 test('the not-closed filter is off by default on the concerning page but can hide Done tasks', function () {
@@ -92,9 +131,8 @@ test('the current-sprint filter shows only active-sprint tasks on the concerning
         ->assertCanNotSeeTableRecords([$notInSprint]);
 });
 
-test('the concerning page only exposes the snooze, not-closed and current-sprint filters', function () {
+test('the concerning page only exposes the not-closed and current-sprint filters', function () {
     livewire(ListConcerningTasks::class)
-        ->assertTableFilterVisible('snoozed')
         ->assertTableFilterVisible('open')
         ->assertTableFilterVisible('in_active_sprint')
         ->assertTableFilterHidden('status')
@@ -110,8 +148,7 @@ test('the full task list exposes the trimmed filters plus not-closed and current
         ->assertTableFilterVisible('assignee_name')
         ->assertTableFilterVisible('sprint')
         ->assertTableFilterVisible('open')
-        ->assertTableFilterVisible('in_active_sprint')
-        ->assertTableFilterHidden('snoozed');
+        ->assertTableFilterVisible('in_active_sprint');
 });
 
 test('starring a task from the full list marks it important', function () {
@@ -193,8 +230,8 @@ test('dismissing a task stamps dismissed_at, unstars it, and clears its pin', fu
 });
 
 test('un-snoozing a task from the full list clears the snooze window', function () {
-    // Snoozed tasks are hidden from the concerning list, so the un-snooze action
-    // surfaces on the full task list where the record is still visible.
+    // The full task list ignores snooze state, so the un-snooze action is
+    // reachable there as well as on the concerning list's "Snoozed" tab.
     $issue = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
 
     livewire(ListJiraIssues::class)
@@ -235,7 +272,7 @@ test('an active snooze hides the snooze action and shows the un-snooze action', 
     $issue = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
 
     livewire(ListConcerningTasks::class)
-        ->filterTable('snoozed', 'snoozed')
+        ->set('activeTab', 'snoozed')
         ->assertCanSeeTableRecords([$issue])
         ->assertTableActionHidden('snooze', $issue)
         ->assertTableActionVisible('unsnooze', $issue);

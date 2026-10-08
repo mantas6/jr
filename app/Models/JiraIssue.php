@@ -36,6 +36,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $concerning_since
  * @property Carbon|null $snoozed_until
  * @property Carbon|null $dismissed_at
+ * @property Carbon|null $last_viewed_at
  * @property bool $mentions_me
  * @property Carbon|null $mentions_scanned_at
  * @property string $jira_url
@@ -68,6 +69,7 @@ use Illuminate\Support\Carbon;
     'concerning_since',
     'snoozed_until',
     'dismissed_at',
+    'last_viewed_at',
     'mentions_me',
     'mentions_scanned_at',
     'jira_url',
@@ -112,6 +114,15 @@ class JiraIssue extends Model
     public function isSnoozed(): bool
     {
         return $this->snoozed_until !== null && $this->snoozed_until->isFuture();
+    }
+
+    /**
+     * Determine whether the issue is unread: it has never been viewed, or Jira
+     * reports activity newer than the last view. Mirrors {@see scopeUnread()}.
+     */
+    public function isUnread(): bool
+    {
+        return $this->last_viewed_at === null || $this->jira_updated_at->gt($this->last_viewed_at);
     }
 
     /**
@@ -204,6 +215,21 @@ class JiraIssue extends Model
     }
 
     /**
+     * Scope the query to unread issues: never viewed, or updated in Jira since
+     * they were last viewed.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    public function scopeUnread(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->whereNull('last_viewed_at')
+                ->orWhereColumn('jira_updated_at', '>', 'last_viewed_at');
+        });
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -220,6 +246,7 @@ class JiraIssue extends Model
             'concerning_since' => 'datetime',
             'snoozed_until' => 'datetime',
             'dismissed_at' => 'datetime',
+            'last_viewed_at' => 'datetime',
             'mentions_me' => 'boolean',
             'mentions_scanned_at' => 'datetime',
             'raw' => 'array',

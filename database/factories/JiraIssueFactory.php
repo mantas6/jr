@@ -52,6 +52,7 @@ class JiraIssueFactory extends Factory
             'concerning_since' => null,
             'snoozed_until' => null,
             'dismissed_at' => null,
+            'last_viewed_at' => null,
             'mentions_me' => false,
             'mentions_scanned_at' => null,
             'jira_url' => $siteUrl.'/browse/'.$jiraKey,
@@ -156,6 +157,16 @@ class JiraIssueFactory extends Factory
     {
         return $this->state(fn (array $attributes): array => [
             'dismissed_at' => $at ?? now(),
+        ]);
+    }
+
+    /**
+     * Mark the issue as viewed at the given time (defaults to now).
+     */
+    public function viewed(?DateTimeInterface $at = null): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'last_viewed_at' => $at ?? now(),
         ]);
     }
 

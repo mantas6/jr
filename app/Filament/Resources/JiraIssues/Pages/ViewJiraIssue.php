@@ -29,6 +29,17 @@ class ViewJiraIssue extends ViewRecord
     private ?array $issueContent = null;
 
     /**
+     * Mark the issue as viewed so it drops off the concerning list's "Unread"
+     * tab until Jira reports newer activity. Saved quietly to skip model events.
+     */
+    public function mount(int|string $record): void
+    {
+        parent::mount($record);
+
+        $this->currentRecord()->forceFill(['last_viewed_at' => now()])->saveQuietly();
+    }
+
+    /**
      * Show the Jira task number (e.g. PROJ-123) as the page title.
      */
     public function getTitle(): string

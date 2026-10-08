@@ -130,19 +130,6 @@ class JiraIssuesTable
                 Filter::make('in_active_sprint')
                     ->label('Current sprint')
                     ->query(fn (Builder $query): Builder => $query->where('in_active_sprint', true)),
-                SelectFilter::make('snoozed')
-                    ->label('Snooze')
-                    ->options([
-                        'active' => 'Not snoozed',
-                        'snoozed' => 'Snoozed',
-                    ])
-                    ->default('active')
-                    ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
-                    ->query(fn (Builder $query, array $data): Builder => match ($data['value'] ?? null) {
-                        'active' => $query->notSnoozed(),
-                        'snoozed' => $query->snoozed(),
-                        default => $query,
-                    }),
             ])
             ->recordUrl(fn (JiraIssue $record): string => JiraIssueResource::getUrl('view', ['record' => $record]))
             ->defaultSort('jira_updated_at', 'desc')
@@ -457,9 +444,8 @@ class JiraIssuesTable
 
     /**
      * Clear an active snooze. Shown only while a task is currently snoozed; an
-     * expired snooze does not surface the action. Since a snoozed task is hidden
-     * from the concerning list, this typically surfaces on the full task list so
-     * the snooze can be lifted.
+     * expired snooze does not surface the action. On the concerning list it
+     * surfaces under the "Snoozed" tab.
      */
     private static function unsnoozeAction(): Action
     {
