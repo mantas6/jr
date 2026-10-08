@@ -115,14 +115,20 @@ final class JiraIssueActions
             }
 
             try {
-                $payload = $this->client->getIssue($key);
+                $payload = $this->client->getIssue($key, $this->extraFields());
             } catch (JiraApiException $exception) {
                 $failed[$key] = $exception->getMessage();
 
                 continue;
             }
 
-            $attributes = JiraIssueMapper::map($payload, $this->user, Carbon::now());
+            $attributes = JiraIssueMapper::map(
+                $payload,
+                $this->user,
+                Carbon::now(),
+                $this->client->sprintFieldId(),
+                $this->client->developmentFieldId(),
+            );
             $attributes['concerning_since'] = Carbon::now();
 
             JiraIssue::create($attributes);
@@ -135,12 +141,26 @@ final class JiraIssueActions
 
     /**
      * Re-fetch the issue from Jira and update the local row from the mapped payload.
+     *
+     * Sprint and pull request columns are left untouched when their custom
+     * field id cannot be resolved, so a failed field lookup never wipes them.
      */
     private function refresh(JiraIssue $issue): JiraIssue
     {
-        $payload = $this->client->getIssue($issue->jira_key);
+        $sprintFieldId = $this->client->sprintFieldId();
+        $developmentFieldId = $this->client->developmentFieldId();
 
-        $attributes = JiraIssueMapper::map($payload, $this->user, Carbon::now());
+        $payload = $this->client->getIssue($issue->jira_key, $this->extraFields());
+
+        $attributes = JiraIssueMapper::map($payload, $this->user, Carbon::now(), $sprintFieldId, $developmentFieldId);
+
+        if ($sprintFieldId === null) {
+            unset($attributes['sprints'], $attributes['in_active_sprint']);
+        }
+
+        if ($developmentFieldId === null) {
+            unset($attributes['pr_state'], $attributes['pr_count']);
+        }
 
         if (JiraIssue::shouldUnsnooze($issue->snoozed_until, $issue->jira_updated_at, $attributes['jira_updated_at'])) {
             $attributes['snoozed_until'] = null;
@@ -149,5 +169,19 @@ final class JiraIssueActions
         $issue->update($attributes);
 
         return $issue;
+    }
+
+    /**
+     * The resolved custom field ids (sprint, development) to request alongside
+     * the standard issue fields.
+     *
+     * @return list<string>
+     */
+    private function extraFields(): array
+    {
+        return array_values(array_filter([
+            $this->client->sprintFieldId(),
+            $this->client->developmentFieldId(),
+        ]));
     }
 }

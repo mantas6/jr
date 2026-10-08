@@ -4,6 +4,7 @@ use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraIssueActions;
+use App\Services\Jira\JiraPullRequestState;
 use App\Services\Jira\JiraTransitionsCache;
 use Illuminate\Support\Facades\Http;
 
@@ -49,6 +50,7 @@ test('transition posts to jira and refreshes the row from the payload', function
     ]);
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-5/transitions' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-5*' => Http::response(issuePayload('PROJ-5')),
     ]);
@@ -119,6 +121,7 @@ test('assign writes to jira and refreshes the row', function () {
     ]);
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-8/assignee' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-8*' => Http::response(issuePayload('PROJ-8', [
             'assignee' => ['accountId' => 'acc-9', 'displayName' => 'Assignee Nine'],
@@ -137,6 +140,64 @@ test('assign writes to jira and refreshes the row', function () {
     });
 });
 
+test('refreshing an issue updates its sprints and pull request summary from the custom fields', function () {
+    $user = User::factory()->withJiraConnection()->create();
+    $issue = JiraIssue::factory()->for($user)->inActiveSprint()->withPullRequest('OPEN', 1)->create([
+        'jira_key' => 'PROJ-12',
+        'sprints' => ['Sprint 1'],
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'customfield_10020', 'schema' => ['custom' => 'com.pyxis.greenhopper.jira:gh-sprint']],
+            ['id' => 'customfield_10000', 'schema' => ['custom' => 'com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf']],
+        ]),
+        '*/rest/api/3/issue/PROJ-12/assignee' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-12*' => Http::response(issuePayload('PROJ-12', [
+            'customfield_10020' => [['name' => 'Sprint 2', 'state' => 'active']],
+            'customfield_10000' => json_encode([
+                'cachedValue' => ['summary' => ['pullrequest' => ['overall' => ['count' => 2, 'state' => 'MERGED']]]],
+            ]),
+        ])),
+    ]);
+
+    JiraIssueActions::forUser($user)->assign($issue, 'acc-9');
+
+    $issue->refresh();
+
+    expect($issue->sprints)->toBe(['Sprint 2'])
+        ->and($issue->in_active_sprint)->toBeTrue()
+        ->and($issue->pr_state)->toBe(JiraPullRequestState::Merged)
+        ->and($issue->pr_count)->toBe(2);
+
+    Http::assertSent(fn ($request) => $request->method() === 'GET'
+        && str_contains($request->url(), '/rest/api/3/issue/PROJ-12')
+        && str_contains((string) $request['fields'], 'customfield_10020,customfield_10000'));
+});
+
+test('refreshing an issue keeps its sprints and pull request summary when the field lookup fails', function () {
+    $user = User::factory()->withJiraConnection()->create();
+    $issue = JiraIssue::factory()->for($user)->inActiveSprint()->withPullRequest('MERGED', 2)->create([
+        'jira_key' => 'PROJ-13',
+        'sprints' => ['Sprint 1'],
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response(['errorMessages' => ['nope']], 403),
+        '*/rest/api/3/issue/PROJ-13/assignee' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-13*' => Http::response(issuePayload('PROJ-13')),
+    ]);
+
+    JiraIssueActions::forUser($user)->assign($issue, 'acc-9');
+
+    $issue->refresh();
+
+    expect($issue->sprints)->toBe(['Sprint 1'])
+        ->and($issue->in_active_sprint)->toBeTrue()
+        ->and($issue->pr_state)->toBe(JiraPullRequestState::Merged)
+        ->and($issue->pr_count)->toBe(2);
+});
+
 test('refreshing a snoozed issue clears the snooze when jira was updated after snoozing', function () {
     $user = User::factory()->withJiraConnection()->create();
     $issue = JiraIssue::factory()->for($user)->snoozed()->create([
@@ -146,6 +207,7 @@ test('refreshing a snoozed issue clears the snooze when jira was updated after s
     ]);
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-10/assignee' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-10*' => Http::response(issuePayload('PROJ-10')),
     ]);
@@ -167,6 +229,7 @@ test('refreshing a snoozed issue preserves the snooze when jira updated timestam
     ]);
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-11/assignee' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-11*' => Http::response(issuePayload('PROJ-11')),
     ]);
@@ -205,6 +268,7 @@ test('addConcerning fetches and creates an unknown task pinned to the list', fun
     $user = User::factory()->withJiraConnection()->create();
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-21*' => Http::response(issuePayload('PROJ-21')),
     ]);
 
@@ -218,10 +282,36 @@ test('addConcerning fetches and creates an unknown task pinned to the list', fun
         ->and($issue->concerning_since)->not->toBeNull();
 });
 
+test('addConcerning stores the sprints and pull request summary of a newly fetched task', function () {
+    $user = User::factory()->withJiraConnection()->create();
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'customfield_10020', 'schema' => ['custom' => 'com.pyxis.greenhopper.jira:gh-sprint']],
+            ['id' => 'customfield_10000', 'schema' => ['custom' => 'com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf']],
+        ]),
+        '*/rest/api/3/issue/PROJ-23*' => Http::response(issuePayload('PROJ-23', [
+            'customfield_10020' => [['name' => 'Sprint 3', 'state' => 'active']],
+            'customfield_10000' => json_encode([
+                'cachedValue' => ['summary' => ['pullrequest' => ['overall' => ['count' => 1, 'state' => 'OPEN']]]],
+            ]),
+        ])),
+    ]);
+
+    JiraIssueActions::forUser($user)->addConcerning(['PROJ-23']);
+
+    $issue = JiraIssue::query()->where('user_id', $user->id)->where('jira_key', 'PROJ-23')->firstOrFail();
+
+    expect($issue->sprints)->toBe(['Sprint 3'])
+        ->and($issue->pr_state)->toBe(JiraPullRequestState::Open)
+        ->and($issue->pr_count)->toBe(1);
+});
+
 test('addConcerning records a per-key failure without aborting the batch', function () {
     $user = User::factory()->withJiraConnection()->create();
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-404*' => Http::response(['errorMessages' => ['Nope']], 404),
         '*/rest/api/3/issue/PROJ-22*' => Http::response(issuePayload('PROJ-22')),
     ]);

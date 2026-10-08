@@ -11,6 +11,7 @@ use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraIssueActions;
 use App\Services\Jira\JiraPriority;
+use App\Services\Jira\JiraPullRequestState;
 use App\Services\Jira\JiraStatus;
 use App\Services\Jira\JiraTransitionsCache;
 use Carbon\CarbonInterface;
@@ -21,6 +22,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Support\Enums\FontWeight;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\Filter;
@@ -59,6 +61,14 @@ class JiraIssuesTable
                     ->label('Status')
                     ->badge()
                     ->color(fn (JiraIssue $record): string => JiraStatus::color($record->status, $record->status_category)),
+                IconColumn::make('pr_state')
+                    ->label('PR')
+                    ->icon(fn (?JiraPullRequestState $state): ?Heroicon => $state?->icon())
+                    ->color(fn (?JiraPullRequestState $state): ?string => $state?->color())
+                    ->tooltip(fn (JiraIssue $record): ?string => $record->pr_state?->describe($record->pr_count))
+                    ->alignCenter()
+                    ->width('1%')
+                    ->toggleable(),
                 TextColumn::make('assignee_name')
                     ->label('Assignee')
                     ->placeholder('Unassigned')

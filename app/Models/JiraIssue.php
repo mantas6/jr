@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\Jira\JiraDuration;
+use App\Services\Jira\JiraPullRequestState;
 use Carbon\CarbonInterface;
 use Database\Factories\JiraIssueFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -29,6 +30,8 @@ use Illuminate\Support\Carbon;
  * @property array<int, string>|null $sprints
  * @property bool|null $in_active_sprint
  * @property int|null $original_estimate_seconds
+ * @property JiraPullRequestState|null $pr_state
+ * @property int|null $pr_count
  * @property bool $is_important
  * @property Carbon|null $concerning_since
  * @property Carbon|null $snoozed_until
@@ -59,6 +62,8 @@ use Illuminate\Support\Carbon;
     'sprints',
     'in_active_sprint',
     'original_estimate_seconds',
+    'pr_state',
+    'pr_count',
     'is_important',
     'concerning_since',
     'snoozed_until',
@@ -209,6 +214,8 @@ class JiraIssue extends Model
             'sprints' => 'array',
             'in_active_sprint' => 'boolean',
             'original_estimate_seconds' => 'integer',
+            'pr_state' => JiraPullRequestState::class,
+            'pr_count' => 'integer',
             'is_important' => 'boolean',
             'concerning_since' => 'datetime',
             'snoozed_until' => 'datetime',

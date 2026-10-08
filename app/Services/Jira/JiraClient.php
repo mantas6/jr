@@ -36,15 +36,23 @@ final class JiraClient
     private const SPRINT_FIELD_SCHEMA = 'com.pyxis.greenhopper.jira:gh-sprint';
 
     /**
+     * The schema identifier Jira uses for the (instance-specific) Development
+     * summary field, which holds linked pull request, branch and build counts.
+     */
+    private const DEVELOPMENT_FIELD_SCHEMA = 'com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf';
+
+    /**
      * The maximum number of issues requested per search page.
      */
     private const MAX_RESULTS = 100;
 
     /**
-     * The resolved Sprint custom field id (e.g. `customfield_10020`), or null
-     * when the instance has no Sprint field. `false` means "not yet resolved".
+     * The memoized `/rest/api/3/field` response, or null when not yet fetched.
+     * A failed lookup is memoized as an empty list.
+     *
+     * @var list<array<string, mixed>>|null
      */
-    private string|false|null $sprintFieldId = false;
+    private ?array $fields = null;
 
     public function __construct(protected User $user, protected PendingRequest $request) {}
 
@@ -79,25 +87,19 @@ final class JiraClient
      */
     public function sprintFieldId(): ?string
     {
-        if ($this->sprintFieldId !== false) {
-            return $this->sprintFieldId;
-        }
+        return $this->customFieldIdForSchema(self::SPRINT_FIELD_SCHEMA);
+    }
 
-        try {
-            $fields = $this->send(fn (PendingRequest $request): Response => $request->get('/rest/api/3/field'))->json();
-        } catch (JiraApiException) {
-            return $this->sprintFieldId = null;
-        }
-
-        if (is_array($fields)) {
-            foreach ($fields as $field) {
-                if (is_array($field) && data_get($field, 'schema.custom') === self::SPRINT_FIELD_SCHEMA) {
-                    return $this->sprintFieldId = (string) data_get($field, 'id');
-                }
-            }
-        }
-
-        return $this->sprintFieldId = null;
+    /**
+     * Resolve the instance-specific Development summary custom field id (e.g.
+     * `customfield_10000`), or null when the Jira instance has no such field.
+     *
+     * Shares the memoized field lookup with {@see self::sprintFieldId()} and
+     * likewise resolves to null on failure.
+     */
+    public function developmentFieldId(): ?string
+    {
+        return $this->customFieldIdForSchema(self::DEVELOPMENT_FIELD_SCHEMA);
     }
 
     /**
@@ -124,13 +126,14 @@ final class JiraClient
     /**
      * Fetch a single issue by key.
      *
+     * @param  list<string>  $extraFields  Additional issue field ids to request.
      * @return array<string, mixed>
      */
-    public function getIssue(string $key): array
+    public function getIssue(string $key, array $extraFields = []): array
     {
         return $this->send(fn (PendingRequest $request): Response => $request->get(
             "/rest/api/3/issue/{$key}",
-            ['fields' => implode(',', self::ISSUE_FIELDS)],
+            ['fields' => implode(',', [...self::ISSUE_FIELDS, ...$extraFields])],
         ))->json();
     }
 
@@ -221,6 +224,43 @@ final class JiraClient
             "/rest/api/3/issue/{$key}/assignee",
             ['accountId' => $accountId],
         ));
+    }
+
+    /**
+     * Find the id of the custom field with the given `schema.custom` identifier.
+     */
+    private function customFieldIdForSchema(string $schema): ?string
+    {
+        foreach ($this->fields() as $field) {
+            if (data_get($field, 'schema.custom') === $schema) {
+                return (string) data_get($field, 'id');
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Fetch (once) the instance's field definitions, resolving to an empty list
+     * when the lookup fails.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function fields(): array
+    {
+        if ($this->fields !== null) {
+            return $this->fields;
+        }
+
+        try {
+            $fields = $this->send(fn (PendingRequest $request): Response => $request->get('/rest/api/3/field'))->json();
+        } catch (JiraApiException) {
+            return $this->fields = [];
+        }
+
+        return $this->fields = is_array($fields)
+            ? array_values(array_filter($fields, is_array(...)))
+            : [];
     }
 
     /**

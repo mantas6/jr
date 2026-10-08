@@ -20,6 +20,7 @@ class JiraIssueMapper
      *
      * @param  array<string, mixed>  $issue
      * @param  string|null  $sprintFieldId  The instance-specific Sprint field id (e.g. `customfield_10020`).
+     * @param  string|null  $developmentFieldId  The instance-specific Development summary field id (e.g. `customfield_10000`).
      * @return array{
      *     user_id: int,
      *     jira_id: string,
@@ -36,6 +37,8 @@ class JiraIssueMapper
      *     sprints: list<string>|null,
      *     in_active_sprint: bool|null,
      *     original_estimate_seconds: int|null,
+     *     pr_state: string|null,
+     *     pr_count: int|null,
      *     jira_url: string,
      *     jira_created_at: CarbonInterface|null,
      *     jira_updated_at: CarbonInterface|null,
@@ -43,13 +46,21 @@ class JiraIssueMapper
      *     last_synced_at: CarbonInterface,
      * }
      */
-    public static function map(array $issue, User $user, ?CarbonInterface $syncedAt = null, ?string $sprintFieldId = null): array
-    {
+    public static function map(
+        array $issue,
+        User $user,
+        ?CarbonInterface $syncedAt = null,
+        ?string $sprintFieldId = null,
+        ?string $developmentFieldId = null,
+    ): array {
         /** @var array<string, mixed> $fields */
         $fields = is_array($issue['fields'] ?? null) ? $issue['fields'] : [];
 
         $syncedAt ??= Carbon::now();
         $key = (string) ($issue['key'] ?? '');
+        $pullRequests = $developmentFieldId !== null
+            ? self::extractPullRequestSummary(data_get($fields, $developmentFieldId))
+            : ['state' => null, 'count' => null];
 
         return [
             'user_id' => $user->id,
@@ -67,6 +78,8 @@ class JiraIssueMapper
             'sprints' => $sprintFieldId !== null ? self::extractSprintNames(data_get($fields, $sprintFieldId)) : null,
             'in_active_sprint' => $sprintFieldId !== null ? self::hasActiveSprint(data_get($fields, $sprintFieldId)) : null,
             'original_estimate_seconds' => self::nullableInt(data_get($fields, 'timeoriginalestimate')),
+            'pr_state' => $pullRequests['state']?->value,
+            'pr_count' => $pullRequests['count'],
             'jira_url' => mb_rtrim((string) $user->jira_site_url, '/').'/browse/'.$key,
             'jira_created_at' => self::parseDate(data_get($fields, 'created')),
             'jira_updated_at' => self::parseDate(data_get($fields, 'updated')),
@@ -83,11 +96,17 @@ class JiraIssueMapper
      *
      * @param  array<string, mixed>  $issue
      * @param  string|null  $sprintFieldId  The instance-specific Sprint field id (e.g. `customfield_10020`).
+     * @param  string|null  $developmentFieldId  The instance-specific Development summary field id (e.g. `customfield_10000`).
      * @return array<string, string|int|null>
      */
-    public static function mapForUpsert(array $issue, User $user, ?CarbonInterface $syncedAt = null, ?string $sprintFieldId = null): array
-    {
-        $row = self::map($issue, $user, $syncedAt, $sprintFieldId);
+    public static function mapForUpsert(
+        array $issue,
+        User $user,
+        ?CarbonInterface $syncedAt = null,
+        ?string $sprintFieldId = null,
+        ?string $developmentFieldId = null,
+    ): array {
+        $row = self::map($issue, $user, $syncedAt, $sprintFieldId, $developmentFieldId);
 
         $row['sprints'] = $row['sprints'] === null ? null : json_encode($row['sprints']);
         $row['in_active_sprint'] = $row['in_active_sprint'] === null ? null : (int) $row['in_active_sprint'];
@@ -180,5 +199,47 @@ class JiraIssueMapper
         }
 
         return false;
+    }
+
+    /**
+     * Extract the overall pull request state and count from a Jira Development
+     * summary field value.
+     *
+     * Jira returns the value as a JSON string, either wrapped in `cachedValue`
+     * (current format) or as a bare `{"summary": ...}` (legacy format). Invalid
+     * JSON, a missing summary or zero pull requests yield no data; an
+     * unrecognised state yields a null state.
+     *
+     * @return array{state: JiraPullRequestState|null, count: int|null}
+     */
+    private static function extractPullRequestSummary(mixed $value): array
+    {
+        $none = ['state' => null, 'count' => null];
+
+        if (!is_string($value) || $value === '') {
+            return $none;
+        }
+
+        $decoded = json_decode($value, true);
+
+        if (!is_array($decoded)) {
+            return $none;
+        }
+
+        $overall = data_get($decoded, 'cachedValue.summary.pullrequest.overall')
+            ?? data_get($decoded, 'summary.pullrequest.overall');
+
+        $count = is_array($overall) ? self::nullableInt($overall['count'] ?? null) : null;
+
+        if ($count === null || $count < 1) {
+            return $none;
+        }
+
+        $state = $overall['state'] ?? null;
+
+        return [
+            'state' => is_string($state) ? JiraPullRequestState::tryFrom(mb_strtoupper($state)) : null,
+            'count' => $count,
+        ];
     }
 }

@@ -46,6 +46,8 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         'sprints',
         'in_active_sprint',
         'original_estimate_seconds',
+        'pr_state',
+        'pr_count',
         'jira_url',
         'jira_created_at',
         'jira_updated_at',
@@ -143,7 +145,8 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         $jql = $this->buildJql($isFullSync, $now);
 
         $sprintFieldId = $client->sprintFieldId();
-        $extraFields = $sprintFieldId !== null ? [$sprintFieldId] : [];
+        $developmentFieldId = $client->developmentFieldId();
+        $extraFields = array_values(array_filter([$sprintFieldId, $developmentFieldId]));
 
         /** @var array<string, string> $representatives Keyed by "issueType|statusId", value is a representative issue key. */
         $representatives = [];
@@ -157,7 +160,7 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
             $rows = [];
 
             foreach ($issues as $issue) {
-                $row = JiraIssueMapper::mapForUpsert($issue, $this->user, $now, $sprintFieldId);
+                $row = JiraIssueMapper::mapForUpsert($issue, $this->user, $now, $sprintFieldId, $developmentFieldId);
                 $rows[] = $row;
 
                 $pair = $row['issue_type'].'|'.$row['status_id'];

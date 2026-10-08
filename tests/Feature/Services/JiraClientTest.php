@@ -105,6 +105,69 @@ test('sprintFieldId returns null instead of failing when the lookup errors', fun
     expect(JiraClient::forUser(jiraUser())->sprintFieldId())->toBeNull();
 });
 
+test('developmentFieldId resolves the development summary field id from the fields endpoint', function () {
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'summary', 'schema' => ['type' => 'string']],
+            ['id' => 'customfield_10000', 'schema' => ['custom' => 'com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf']],
+        ]),
+    ]);
+
+    expect(JiraClient::forUser(jiraUser())->developmentFieldId())->toBe('customfield_10000');
+});
+
+test('developmentFieldId returns null when the instance has no development field', function () {
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'customfield_10020', 'schema' => ['custom' => 'com.pyxis.greenhopper.jira:gh-sprint']],
+        ]),
+    ]);
+
+    expect(JiraClient::forUser(jiraUser())->developmentFieldId())->toBeNull();
+});
+
+test('sprint and development field ids share a single fields lookup', function () {
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'customfield_10020', 'schema' => ['custom' => 'com.pyxis.greenhopper.jira:gh-sprint']],
+            ['id' => 'customfield_10000', 'schema' => ['custom' => 'com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf']],
+        ]),
+    ]);
+
+    $client = JiraClient::forUser(jiraUser());
+
+    $sprintFieldId = $client->sprintFieldId();
+    $developmentFieldId = $client->developmentFieldId();
+
+    expect($sprintFieldId)->toBe('customfield_10020')
+        ->and($developmentFieldId)->toBe('customfield_10000');
+
+    Http::assertSentCount(1);
+});
+
+test('getIssue requests the standard issue fields', function () {
+    Http::fake(['*' => Http::response(['key' => 'PROJ-1'])]);
+
+    $result = JiraClient::forUser(jiraUser())->getIssue('PROJ-1');
+
+    expect($result)->toBe(['key' => 'PROJ-1']);
+
+    Http::assertSent(function (Request $request) {
+        return str_starts_with($request->url(), 'https://example.atlassian.net/rest/api/3/issue/PROJ-1')
+            && $request['fields'] === 'summary,status,issuetype,priority,assignee,reporter,created,updated,timeoriginalestimate';
+    });
+});
+
+test('getIssue appends extra fields to the requested field list', function () {
+    Http::fake(['*' => Http::response(['key' => 'PROJ-1'])]);
+
+    JiraClient::forUser(jiraUser())->getIssue('PROJ-1', ['customfield_10020', 'customfield_10000']);
+
+    Http::assertSent(function (Request $request) {
+        return $request['fields'] === 'summary,status,issuetype,priority,assignee,reporter,created,updated,timeoriginalestimate,customfield_10020,customfield_10000';
+    });
+});
+
 test('transitionIssue posts the transition body', function () {
     Http::fake(['*' => Http::response(null, 204)]);
 

@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use App\Services\Jira\JiraIssueMapper;
+use App\Services\Jira\JiraPullRequestState;
 use Illuminate\Support\Carbon;
 
 function fullJiraPayload(): array
@@ -254,4 +255,104 @@ test('mapForUpsert json-encodes the sprints array', function () {
     $row = JiraIssueMapper::mapForUpsert($payload, $user, Carbon::parse('2024-05-01 09:00:00'), 'customfield_10020');
 
     expect($row['sprints'])->toBe(json_encode(['Sprint 1']));
+});
+
+/**
+ * Build a Jira payload whose Development summary field (`customfield_10000`)
+ * holds the given raw value.
+ */
+function developmentPayload(mixed $value): array
+{
+    $payload = fullJiraPayload();
+    $payload['fields']['customfield_10000'] = $value;
+
+    return $payload;
+}
+
+/**
+ * Encode a current-format Development summary field value.
+ */
+function developmentSummary(int $count, string $state): string
+{
+    return json_encode([
+        'cachedValue' => [
+            'errors' => [],
+            'summary' => [
+                'pullrequest' => [
+                    'overall' => [
+                        'count' => $count,
+                        'lastUpdated' => '2026-10-01T10:00:00.000+0000',
+                        'stateCount' => 1,
+                        'state' => $state,
+                        'dataType' => 'pullrequest',
+                        'open' => $state === 'OPEN',
+                    ],
+                    'byInstanceType' => ['bitbucket' => ['count' => $count, 'name' => 'Bitbucket']],
+                ],
+                'build' => ['overall' => ['count' => 0]],
+            ],
+        ],
+        'isStale' => false,
+    ]);
+}
+
+test('map extracts the pull request state and count from the development field', function (string $state, int $count, JiraPullRequestState $expected) {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $row = JiraIssueMapper::map(developmentPayload(developmentSummary($count, $state)), $user, null, null, 'customfield_10000');
+
+    expect($row['pr_state'])->toBe($expected->value)
+        ->and($row['pr_count'])->toBe($count);
+})->with([
+    'merged' => ['MERGED', 2, JiraPullRequestState::Merged],
+    'open' => ['OPEN', 1, JiraPullRequestState::Open],
+    'declined' => ['DECLINED', 3, JiraPullRequestState::Declined],
+]);
+
+test('map reads the legacy development summary format without cachedValue', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $legacy = json_encode(['summary' => ['pullrequest' => ['overall' => ['count' => 1, 'state' => 'OPEN']]]]);
+
+    $row = JiraIssueMapper::map(developmentPayload($legacy), $user, null, null, 'customfield_10000');
+
+    expect($row['pr_state'])->toBe('OPEN')
+        ->and($row['pr_count'])->toBe(1);
+});
+
+test('map returns no pull request data when the development value has none', function (mixed $value) {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $row = JiraIssueMapper::map(developmentPayload($value), $user, null, null, 'customfield_10000');
+
+    expect($row['pr_state'])->toBeNull()
+        ->and($row['pr_count'])->toBeNull();
+})->with([
+    'missing field' => [null],
+    'invalid json' => ['{not json'],
+    'zero pull requests' => [json_encode(['cachedValue' => ['summary' => ['pullrequest' => ['overall' => ['count' => 0]]]]])],
+    'no pull request summary' => [json_encode(['cachedValue' => ['summary' => ['build' => ['overall' => ['count' => 2]]]]])],
+]);
+
+test('map keeps the pull request count but no state for an unknown state', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $row = JiraIssueMapper::map(developmentPayload(developmentSummary(1, 'SUPERSEDED')), $user, null, null, 'customfield_10000');
+
+    expect($row['pr_state'])->toBeNull()
+        ->and($row['pr_count'])->toBe(1);
+});
+
+test('pull request data is null when no development field id is given', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+
+    $row = JiraIssueMapper::map(developmentPayload(developmentSummary(2, 'MERGED')), $user);
+
+    expect($row['pr_state'])->toBeNull()
+        ->and($row['pr_count'])->toBeNull();
 });

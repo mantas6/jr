@@ -6,8 +6,11 @@ use App\Filament\Resources\JiraIssues\Pages\ViewJiraIssue;
 use App\Filament\Resources\JiraIssues\Tables\JiraIssuesTable;
 use App\Models\JiraIssue;
 use App\Models\User;
+use App\Services\Jira\JiraPullRequestState;
 use App\Services\Jira\JiraTransitionsCache;
 use Filament\Actions\Testing\TestAction;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\IconColumn;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -118,6 +121,7 @@ test('changing the status via the update modal transitions the issue and refresh
     ]);
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-20/transitions' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-20*' => Http::response(resourceIssuePayload('PROJ-20')),
     ]);
@@ -148,6 +152,7 @@ test('a status change trusts the transition target when jira re-fetch is still s
     // The transition succeeds, but the immediate re-fetch still reports the old
     // status because Jira's workflow post-functions have not completed yet.
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-22/transitions' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-22*' => Http::response(resourceIssuePayload('PROJ-22', [
             'status' => [
@@ -207,6 +212,7 @@ test('changing the assignee via the update modal assigns the issue in jira and r
     JiraTransitionsCache::put($user, 'Task', '1', []);
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-30/assignee' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-30*' => Http::response(resourceIssuePayload('PROJ-30', [
             'assignee' => ['accountId' => 'acc-9', 'displayName' => 'Assignee Nine'],
@@ -242,6 +248,7 @@ test('selecting Unassigned via the update modal clears the assignee in jira and 
     JiraTransitionsCache::put($user, 'Task', '1', []);
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-31/assignee' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-31*' => Http::response(resourceIssuePayload('PROJ-31', [
             'assignee' => null,
@@ -413,6 +420,34 @@ test('removing the not-closed filter reveals Done tasks on the full list', funct
     livewire(ListJiraIssues::class)
         ->filterTable('open', false)
         ->assertCanSeeTableRecords([$open, $done]);
+});
+
+test('the PR column shows the pull request state icon, color and tooltip', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->withPullRequest('MERGED', 2)->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertTableColumnStateSet('pr_state', JiraPullRequestState::Merged, $issue)
+        ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getIcon($column->getState()) === Heroicon::OutlinedCheckCircle
+            && $column->getColor($column->getState()) === 'success'
+            && $column->getTooltip() === '2 pull requests, merged', $issue);
+});
+
+test('the PR column is empty for a task without pull requests', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getIcon($column->getState()) === null
+            && $column->getTooltip() === null, $issue);
 });
 
 test('the current-sprint filter shows only active-sprint tasks on the full list', function () {
@@ -727,6 +762,7 @@ test('changing status from the view page transitions the issue in jira', functio
     ]);
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-50/transitions' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-50*' => Http::response(resourceIssuePayload('PROJ-50')),
     ]);
@@ -758,6 +794,7 @@ test('reassigning from the view page assigns the issue in jira', function () {
     JiraTransitionsCache::put($user, 'Task', '1', []);
 
     Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
         '*/rest/api/3/issue/PROJ-51/assignee' => Http::response([], 204),
         '*/rest/api/3/issue/PROJ-51*' => Http::response(resourceIssuePayload('PROJ-51', [
             'assignee' => ['accountId' => 'acc-me', 'displayName' => 'Me McGee'],

@@ -5,6 +5,7 @@ use App\Jobs\SyncJiraMentionsJob;
 use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
+use App\Services\Jira\JiraPullRequestState;
 use App\Services\Jira\JiraTransitionsCache;
 use Illuminate\Http\Client\Request;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
@@ -133,6 +134,35 @@ test('it syncs sprint names using the auto-detected sprint field', function () {
         ->toBe(['Sprint 1', 'Sprint 2']);
 
     Http::assertSent(fn (Request $request) => isset($request['fields']) && str_contains((string) $request['fields'], 'customfield_10020'));
+});
+
+test('it syncs the pull request summary using the auto-detected development field', function () {
+    $user = syncUser();
+
+    $issue = jiraIssuePayload('1001', 'PROJ-1', 'First issue');
+    $issue['fields']['customfield_10000'] = json_encode([
+        'cachedValue' => ['summary' => ['pullrequest' => ['overall' => ['count' => 2, 'state' => 'MERGED']]]],
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'customfield_10000', 'schema' => ['custom' => 'com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf']],
+        ]),
+        '*/rest/api/3/search/jql*' => Http::response([
+            'issues' => [$issue],
+            'isLast' => true,
+        ]),
+        '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
+    ]);
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    $synced = JiraIssue::where('jira_id', '1001')->firstOrFail();
+
+    expect($synced->pr_state)->toBe(JiraPullRequestState::Merged)
+        ->and($synced->pr_count)->toBe(2);
+
+    Http::assertSent(fn (Request $request) => isset($request['fields']) && str_contains((string) $request['fields'], 'customfield_10000'));
 });
 
 test('a sync without a sprint field stores null sprints', function () {

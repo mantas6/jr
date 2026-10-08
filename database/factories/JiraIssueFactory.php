@@ -46,6 +46,8 @@ class JiraIssueFactory extends Factory
             'sprints' => null,
             'in_active_sprint' => false,
             'original_estimate_seconds' => null,
+            'pr_state' => null,
+            'pr_count' => null,
             'is_important' => false,
             'concerning_since' => null,
             'snoozed_until' => null,
@@ -89,6 +91,17 @@ class JiraIssueFactory extends Factory
     {
         return $this->state(fn (array $attributes): array => [
             'original_estimate_seconds' => $seconds,
+        ]);
+    }
+
+    /**
+     * Give the issue a linked pull request summary from Jira's Development field.
+     */
+    public function withPullRequest(string $state = 'OPEN', int $count = 1): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'pr_state' => $state,
+            'pr_count' => $count,
         ]);
     }
 
