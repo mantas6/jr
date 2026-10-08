@@ -451,6 +451,18 @@ test('the PR column is empty for a task without pull requests', function () {
             && $column->getTooltip() === null, $issue);
 });
 
+test('the PR column hides declined statuses and their tooltip', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->withPullRequest('DECLINED', 2)->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getIcon($column->getState()) === null
+            && $column->getTooltip() === null, $issue);
+});
+
 test('the current-sprint filter shows only active-sprint tasks on the full list', function () {
     Http::fake();
 
@@ -807,6 +819,41 @@ test('an open PR overrides a stale merged badge and updates the list status', fu
         ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getColor($column->getState()) === 'info'
             && $column->getTooltip() === '2 pull requests, open', $issue->fresh());
 });
+
+test('declined statuses are omitted from the PR section summary', function (array $statuses, ?string $summary) {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->withPullRequest('DECLINED', count($statuses))->create([
+        'jira_key' => 'PROJ-70',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-70*' => Http::response(['fields' => []]),
+        '*/rest/dev-status/1.0/issue/summary*' => Http::response([
+            'summary' => ['pullrequest' => ['byInstanceType' => ['bitbucket' => ['count' => count($statuses)]]]],
+        ]),
+        '*/rest/dev-status/1.0/issue/detail*' => Http::response([
+            'detail' => [['pullRequests' => array_map(fn (string $status): array => ['status' => $status], $statuses)]],
+        ]),
+    ]);
+
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    $partial = $component->effects['partials']['schema.infolist.jiraContent'];
+    preg_match_all('/<header\b[^>]*>(.*?)<\/header>/s', $partial, $headers);
+    $prHeader = collect($headers[1])->first(fn (string $header): bool => str_contains($header, 'Pull requests'));
+
+    expect($prHeader)->toBeString()->not->toContain('declined')
+        ->toContain($summary ?? 'Pull requests');
+    expect(str_contains($prHeader, 'fi-badge'))->toBe($summary !== null);
+})->with([
+    'only declined' => [['DECLINED'], null],
+    'declined and merged' => [['DECLINED', 'MERGED'], '2 pull requests, merged'],
+    'declined and open' => [['DECLINED', 'OPEN'], '2 pull requests, open'],
+]);
 
 test('the view page renders each copy-as-markdown button in its header with its own content', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);

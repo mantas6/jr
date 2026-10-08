@@ -17,20 +17,16 @@ enum JiraPullRequestState: string
     case Declined = 'DECLINED';
 
     /**
-     * Open requests take priority; only an entirely merged set is successful.
+     * Open requests take priority; declined requests do not affect the status.
      *
      * @param  list<string>  $statuses
      */
     public static function fromStatuses(array $statuses): ?self
     {
-        $statuses = array_map(mb_strtoupper(...), $statuses);
+        $statuses = array_values(array_diff(array_map(mb_strtoupper(...), $statuses), [self::Declined->value]));
 
         if (in_array(self::Open->value, $statuses, true)) {
             return self::Open;
-        }
-
-        if (in_array(self::Declined->value, $statuses, true)) {
-            return self::Declined;
         }
 
         return $statuses !== [] && array_diff($statuses, [self::Merged->value]) === []
@@ -53,12 +49,12 @@ enum JiraPullRequestState: string
     /**
      * The icon representing the state.
      */
-    public function icon(): Heroicon
+    public function icon(): ?Heroicon
     {
         return match ($this) {
             self::Open => Heroicon::OutlinedArrowPathRoundedSquare,
             self::Merged => Heroicon::OutlinedCheckCircle,
-            self::Declined => Heroicon::OutlinedXCircle,
+            self::Declined => null,
         };
     }
 
@@ -73,8 +69,12 @@ enum JiraPullRequestState: string
     /**
      * Describe a pull request summary, e.g. `2 pull requests, merged`.
      */
-    public function describe(?int $count): string
+    public function describe(?int $count): ?string
     {
+        if ($this === self::Declined) {
+            return null;
+        }
+
         $count = max(1, (int) $count);
 
         return $count.' '.($count === 1 ? 'pull request' : 'pull requests').', '.$this->label();
