@@ -32,6 +32,32 @@ test('requests use basic auth and the configured base url', function () {
     });
 });
 
+test('pooled development summaries use Jira credentials and isolate HTTP and connection failures', function () {
+    $body = ['summary' => ['pullrequest' => ['overall' => ['count' => 2, 'state' => 'OPEN']]]];
+
+    Http::fake([
+        '*/rest/dev-status/1.0/issue/summary?issueId=1001' => Http::response($body),
+        '*/rest/dev-status/1.0/issue/summary?issueId=1002' => Http::response([], 403),
+        '*/rest/dev-status/1.0/issue/summary?issueId=1003' => Http::failedConnection(),
+    ]);
+
+    $result = JiraClient::forUser(jiraUser())->getDevelopmentSummaries(['1001', '1002', '1003']);
+
+    expect($result)->toEqual([1001 => $body, 1002 => null, 1003 => null]);
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://example.atlassian.net/rest/dev-status/1.0/issue/summary?issueId=1001'
+        && $request->hasHeader('Authorization', 'Basic '.base64_encode('me@example.com:secret-token')));
+});
+
+test('development summaries do not make requests when no issues need refreshing', function () {
+    Http::fake();
+
+    $result = JiraClient::forUser(jiraUser())->getDevelopmentSummaries([]);
+
+    expect($result)->toBe([]);
+    Http::assertNothingSent();
+});
+
 test('searchIssues sends jql, fields and nextPageToken query params and returns the decoded body', function () {
     $body = ['issues' => [['id' => '1']], 'nextPageToken' => 'next', 'isLast' => false];
 

@@ -395,7 +395,7 @@ test('the sprint filter narrows to the selected sprint without partial-name fals
         ->assertCanNotSeeTableRecords([$inSprintTen]);
 });
 
-test('the not-closed filter hides Done tasks by default on the full list', function () {
+test('the full list includes open and Done tasks by default', function () {
     Http::fake();
 
     $user = User::factory()->create();
@@ -405,11 +405,10 @@ test('the not-closed filter hides Done tasks by default on the full list', funct
     $done = JiraIssue::factory()->for($user)->done()->create();
 
     livewire(ListJiraIssues::class)
-        ->assertCanSeeTableRecords([$open])
-        ->assertCanNotSeeTableRecords([$done]);
+        ->assertCanSeeTableRecords([$open, $done]);
 });
 
-test('removing the not-closed filter reveals Done tasks on the full list', function () {
+test('enabling the not-closed filter hides Done tasks on the full list', function () {
     Http::fake();
 
     $user = User::factory()->create();
@@ -419,8 +418,9 @@ test('removing the not-closed filter reveals Done tasks on the full list', funct
     $done = JiraIssue::factory()->for($user)->done()->create();
 
     livewire(ListJiraIssues::class)
-        ->filterTable('open', false)
-        ->assertCanSeeTableRecords([$open, $done]);
+        ->filterTable('open', true)
+        ->assertCanSeeTableRecords([$open])
+        ->assertCanNotSeeTableRecords([$done]);
 });
 
 test('the PR column shows the pull request state icon, color and tooltip', function () {
@@ -434,7 +434,7 @@ test('the PR column shows the pull request state icon, color and tooltip', funct
     livewire(ListJiraIssues::class)
         ->assertTableColumnStateSet('pr_state', JiraPullRequestState::Merged, $issue)
         ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getIcon($column->getState()) === Heroicon::OutlinedCheckCircle
-            && $column->getColor($column->getState()) === 'success'
+            && $column->getColor($column->getState()) === 'gray'
             && $column->getTooltip() === '2 pull requests, merged', $issue);
 });
 

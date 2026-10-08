@@ -8,6 +8,7 @@ use App\Models\User;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
@@ -218,6 +219,43 @@ final class JiraClient
             '/rest/dev-status/1.0/issue/summary',
             ['issueId' => $issueId],
         ))->json();
+    }
+
+    /**
+     * Fetch live summaries concurrently, isolating failures to each issue.
+     *
+     * @param  list<string>  $issueIds
+     * @return array<int|string, array<string, mixed>|null>
+     */
+    public function getDevelopmentSummaries(array $issueIds): array
+    {
+        if ($issueIds === []) {
+            return [];
+        }
+
+        $responses = Http::pool(function (Pool $pool) use ($issueIds): array {
+            $requests = [];
+
+            foreach ($issueIds as $issueId) {
+                $requests[] = $pool->as($issueId)
+                    ->baseUrl((string) $this->user->jira_site_url)
+                    ->withBasicAuth((string) $this->user->jira_email, (string) $this->user->jira_api_token)
+                    ->acceptJson()
+                    ->get('/rest/dev-status/1.0/issue/summary', ['issueId' => $issueId]);
+            }
+
+            return $requests;
+        }, concurrency: 5);
+
+        $summaries = [];
+
+        foreach ($responses as $issueId => $response) {
+            $summaries[$issueId] = $response instanceof Response && $response->successful()
+                ? $response->json()
+                : null;
+        }
+
+        return $summaries;
     }
 
     /**

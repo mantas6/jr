@@ -157,20 +157,25 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
 
             $issues = $page['issues'];
 
+            $refreshIds = [];
+
+            foreach ($issues as $issue) {
+                if ($developmentFieldId !== null && JiraIssueMapper::needsPullRequestRefresh(data_get($issue, 'fields.'.$developmentFieldId))) {
+                    $refreshIds[] = (string) $issue['id'];
+                }
+            }
+
+            $developmentSummaries = $client->getDevelopmentSummaries($refreshIds);
+
             $rows = [];
 
             foreach ($issues as $issue) {
                 $row = JiraIssueMapper::mapForUpsert($issue, $this->user, $now, $sprintFieldId, $developmentFieldId);
 
-                if ($developmentFieldId !== null && JiraIssueMapper::needsPullRequestRefresh(data_get($issue, 'fields.'.$developmentFieldId))) {
-                    try {
-                        $pullRequests = JiraIssueMapper::extractPullRequestSummary($client->getDevelopmentSummary((string) $row['jira_id']));
-                        $row['pr_state'] = $pullRequests['state']?->value;
-                        $row['pr_count'] = $pullRequests['count'];
-                    } catch (JiraApiException) {
-                        $row['pr_state'] = null;
-                        $row['pr_count'] = null;
-                    }
+                if (array_key_exists((string) $row['jira_id'], $developmentSummaries)) {
+                    $pullRequests = JiraIssueMapper::extractPullRequestSummary($developmentSummaries[$row['jira_id']]);
+                    $row['pr_state'] = $pullRequests['state']?->value;
+                    $row['pr_count'] = $pullRequests['count'];
                 }
 
                 $rows[] = $row;

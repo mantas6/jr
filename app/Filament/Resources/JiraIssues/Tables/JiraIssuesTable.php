@@ -65,7 +65,7 @@ class JiraIssuesTable
                 IconColumn::make('pr_state')
                     ->label('PR')
                     ->icon(fn (?JiraPullRequestState $state): ?Heroicon => $state?->icon())
-                    ->color(fn (?JiraPullRequestState $state): ?string => $state?->color())
+                    ->color(fn (?JiraPullRequestState $state): ?string => $state === JiraPullRequestState::Merged ? 'gray' : $state?->color())
                     ->tooltip(fn (JiraIssue $record): ?string => $record->pr_state?->describe($record->pr_count))
                     ->alignCenter()
                     ->width('1%')
@@ -127,7 +127,6 @@ class JiraIssuesTable
                     }),
                 Filter::make('open')
                     ->label('Not closed')
-                    ->default(fn (HasTable $livewire): bool => !$livewire instanceof ListConcerningTasks)
                     ->query(fn (Builder $query): Builder => $query->whereRaw('lower(status_category) != ?', ['done'])),
                 Filter::make('in_active_sprint')
                     ->label('Current sprint')
