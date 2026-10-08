@@ -10,6 +10,7 @@ use App\Services\Jira\ConcerningTasksExporter;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraIssueActions;
+use App\Services\Jira\JiraIssueReason;
 use App\Services\Jira\JiraPriority;
 use App\Services\Jira\JiraPullRequestState;
 use App\Services\Jira\JiraStatus;
@@ -62,6 +63,15 @@ class JiraIssuesTable
                     ->label('Status')
                     ->badge()
                     ->color(fn (JiraIssue $record): string => JiraStatus::color($record->status, $record->status_category)),
+                IconColumn::make('reason')
+                    ->state(fn (JiraIssue $record): ?JiraIssueReason => JiraIssueReason::for($record, self::user()))
+                    ->icon(fn (?JiraIssueReason $state): ?Heroicon => $state?->icon())
+                    ->color('gray')
+                    ->tooltip(fn (JiraIssue $record): ?string => JiraIssueReason::for($record, self::user())?->label())
+                    ->alignCenter()
+                    ->width('1%')
+                    ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+                    ->toggleable(),
                 IconColumn::make('pr_state')
                     ->label('PR')
                     ->icon(fn (?JiraPullRequestState $state): ?Heroicon => $state?->icon())

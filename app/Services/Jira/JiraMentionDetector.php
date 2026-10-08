@@ -46,6 +46,22 @@ class JiraMentionDetector
      */
     public static function latestCommentMentionAt(mixed $comments, string $accountId): ?CarbonInterface
     {
+        return self::latestCommentByOthersAt($comments, $accountId, mentionsOnly: true);
+    }
+
+    /**
+     * Find the time of the newest comment made by someone else, or null when
+     * there is none. Timestamps follow {@see latestCommentMentionAt()}.
+     *
+     * @param  mixed  $comments  The `comment.comments` list from a Jira issue payload.
+     */
+    public static function latestCommentAt(mixed $comments, string $accountId): ?CarbonInterface
+    {
+        return self::latestCommentByOthersAt($comments, $accountId, mentionsOnly: false);
+    }
+
+    private static function latestCommentByOthersAt(mixed $comments, string $accountId, bool $mentionsOnly): ?CarbonInterface
+    {
         if ($accountId === '' || !is_array($comments)) {
             return null;
         }
@@ -53,7 +69,7 @@ class JiraMentionDetector
         $latest = null;
 
         foreach ($comments as $comment) {
-            if (!is_array($comment) || !self::mentions($comment['body'] ?? null, $accountId)) {
+            if (!is_array($comment) || ($mentionsOnly && !self::mentions($comment['body'] ?? null, $accountId))) {
                 continue;
             }
 

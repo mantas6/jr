@@ -23,7 +23,8 @@ use Illuminate\Support\Carbon;
  *
  * The time of the newest comment mention by someone else is kept in
  * `last_mentioned_at`, which re-surfaces a dismissed task and clears an active
- * snooze when it moves forward.
+ * snooze when it moves forward. The newest comment by someone else is kept in
+ * `last_commented_at` so the list can show it as the reason for attention.
  */
 #[UniqueFor(900)]
 class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
@@ -94,7 +95,7 @@ class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
             $existing = JiraIssue::query()
                 ->where('user_id', $this->user->id)
                 ->whereIn('jira_id', array_map(fn (array $issue): string => (string) data_get($issue, 'id'), $page['issues']))
-                ->get(['id', 'jira_id', 'snoozed_until', 'last_mentioned_at'])
+                ->get(['id', 'jira_id', 'snoozed_until', 'last_mentioned_at', 'last_commented_at'])
                 ->keyBy('jira_id');
 
             foreach ($page['issues'] as $issue) {
@@ -137,6 +138,12 @@ class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
             if ($current->isSnoozed()) {
                 $attributes['snoozed_until'] = null;
             }
+        }
+
+        $commentedAt = JiraMentionDetector::latestCommentAt($comments, $accountId)?->startOfSecond();
+
+        if ($commentedAt !== null && ($current->last_commented_at === null || $commentedAt->gt($current->last_commented_at))) {
+            $attributes['last_commented_at'] = $commentedAt;
         }
 
         JiraIssue::query()

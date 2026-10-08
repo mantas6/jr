@@ -57,6 +57,7 @@ class JiraIssueFactory extends Factory
             'mentions_me' => false,
             'mentions_scanned_at' => null,
             'last_mentioned_at' => null,
+            'last_commented_at' => null,
             'jira_url' => $siteUrl.'/browse/'.$jiraKey,
             'jira_created_at' => fake()->dateTimeBetween('-1 year', '-1 month'),
             'jira_updated_at' => fake()->dateTimeBetween('-1 month', 'now'),

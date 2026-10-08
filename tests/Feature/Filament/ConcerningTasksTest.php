@@ -5,6 +5,8 @@ use App\Filament\Resources\JiraIssues\Pages\ListConcerningTasks;
 use App\Filament\Resources\JiraIssues\Pages\ListJiraIssues;
 use App\Models\JiraIssue;
 use App\Models\User;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\IconColumn;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
@@ -29,6 +31,19 @@ test('the concerning page only shows tasks that need attention', function () {
     livewire(ListConcerningTasks::class)
         ->assertCanSeeTableRecords([$important])
         ->assertCanNotSeeTableRecords([$quiet]);
+});
+
+test('the concerning page shows the reason as a gray icon with a tooltip', function () {
+    $issue = JiraIssue::factory()->for($this->user)->important()->mentionedAt(now()->addMinute())->create();
+
+    livewire(ListConcerningTasks::class)
+        ->assertTableColumnVisible('reason')
+        ->assertTableColumnExists('reason', fn (IconColumn $column): bool => $column->getIcon($column->getState()) === Heroicon::OutlinedAtSymbol
+            && $column->getColor($column->getState()) === 'gray'
+            && $column->getTooltip() === 'Mentioned', $issue);
+
+    livewire(ListJiraIssues::class)
+        ->assertTableColumnHidden('reason');
 });
 
 test('the concerning page defaults to the active tab, which hides snoozed tasks', function () {

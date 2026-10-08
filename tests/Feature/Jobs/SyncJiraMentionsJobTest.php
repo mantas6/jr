@@ -161,6 +161,31 @@ test('it stores the newest mention by someone else and ignores my own comments',
         ->and($issue->last_mentioned_at->toDateTimeString())->toBe('2024-03-05 10:30:00');
 });
 
+test('it stores the newest comment by someone else and never moves it backward', function () {
+    $user = mentionsUser();
+
+    $issue = JiraIssue::factory()->for($user)->create(['jira_id' => '3010', 'last_commented_at' => '2024-03-03 10:00:00']);
+    $older = JiraIssue::factory()->for($user)->create(['jira_id' => '3011', 'last_commented_at' => '2024-04-01 10:00:00']);
+
+    $comments = [
+        mentionComment('acc-other', '2024-03-02T10:00:00.000+0000', mentionedId: 'acc-someone'),
+        mentionComment('acc-other', '2024-03-04T10:00:00.000+0000', mentionedId: 'acc-someone'),
+        mentionComment('acc-me', '2024-03-09T10:00:00.000+0000', mentionedId: 'acc-someone'),
+    ];
+    $first = mentionIssuePayload('3010', 'PROJ-40');
+    $first['fields']['comment'] = ['comments' => $comments, 'total' => 3];
+    $second = mentionIssuePayload('3011', 'PROJ-41');
+    $second['fields']['comment'] = ['comments' => $comments, 'total' => 3];
+
+    Http::fake(['*/rest/api/3/search/jql*' => Http::response(['issues' => [$first, $second], 'isLast' => true])]);
+
+    (new SyncJiraMentionsJob($user))->handle();
+
+    expect($issue->fresh()->last_commented_at->toDateTimeString())->toBe('2024-03-04 10:00:00')
+        ->and($issue->fresh()->mentions_me)->toBeFalse()
+        ->and($older->fresh()->last_commented_at->toDateTimeString())->toBe('2024-04-01 10:00:00');
+});
+
 test('my own edit of someone elses comment counts from when it was created', function () {
     $user = mentionsUser();
 

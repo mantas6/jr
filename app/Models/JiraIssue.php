@@ -41,6 +41,7 @@ use Illuminate\Support\Carbon;
  * @property bool $mentions_me
  * @property Carbon|null $mentions_scanned_at
  * @property Carbon|null $last_mentioned_at
+ * @property Carbon|null $last_commented_at
  * @property string $jira_url
  * @property Carbon $jira_created_at
  * @property Carbon $jira_updated_at
@@ -77,6 +78,7 @@ use Illuminate\Support\Carbon;
     'mentions_me',
     'mentions_scanned_at',
     'last_mentioned_at',
+    'last_commented_at',
     'jira_url',
     'jira_created_at',
     'jira_updated_at',
@@ -252,6 +254,7 @@ class JiraIssue extends Model
             'mentions_me' => 'boolean',
             'mentions_scanned_at' => 'datetime',
             'last_mentioned_at' => 'datetime',
+            'last_commented_at' => 'datetime',
             'raw' => 'array',
             'jira_created_at' => 'datetime',
             'jira_updated_at' => 'datetime',
