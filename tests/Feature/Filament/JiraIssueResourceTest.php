@@ -568,7 +568,198 @@ test('the view page renders the live description and comments from jira', functi
     Http::assertSentCount(1);
 });
 
-test('the view page renders copy-as-markdown buttons with the embedded markdown', function () {
+test('the view page renders live subtasks in a table with safe Jira links and escaped summaries', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-70',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-70*' => Http::response([
+            'fields' => ['subtasks' => [
+                [
+                    'key' => 'PROJ-71',
+                    'self' => 'javascript:alert(1)',
+                    'fields' => [
+                        'summary' => 'Child <script>alert(1)</script>',
+                        'status' => ['name' => 'Testing', 'statusCategory' => ['name' => 'In Progress']],
+                        'priority' => ['name' => 'High'],
+                    ],
+                ],
+                ['key' => 'PROJ-72', 'fields' => ['summary' => 'Another child']],
+            ]],
+        ]),
+    ]);
+
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    expect($component->effects['partials']['schema.infolist.jiraContent'])
+        ->toContain('Subtasks')
+        ->toContain('<table')
+        ->toContain('PROJ-71')
+        ->toContain('PROJ-72')
+        ->toContain('Child &lt;script&gt;alert(1)&lt;/script&gt;')
+        ->toContain('Another child')
+        ->toContain('Testing')
+        ->toContain('High')
+        ->toContain('href="https://example.atlassian.net/browse/PROJ-71"')
+        ->not->toContain('<script>alert(1)</script>')
+        ->not->toContain('javascript:alert(1)');
+
+    Http::assertSentCount(1);
+});
+
+test('the view page hides the subtasks section when Jira has none or the request fails', function (array $payload, int $status) {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-70',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake(['*/rest/api/3/issue/PROJ-70*' => Http::response($payload, $status)]);
+
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    expect($component->effects['partials']['schema.infolist.jiraContent'])
+        ->not->toContain('Subtasks');
+})->with([
+    'no subtasks' => [['fields' => ['subtasks' => []]], 200],
+    'subtasks omitted' => [['fields' => []], 200],
+    'Jira request fails' => [['errorMessages' => ['Issue not found']], 404],
+]);
+
+test('the view page shows Epic child issues even when the native subtasks field is empty', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-70',
+        'issue_type' => 'Epic',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-70*' => Http::response(['fields' => ['subtasks' => []]]),
+        '*/rest/api/3/search/jql*' => Http::response([
+            'issues' => [['key' => 'PROJ-71', 'fields' => ['summary' => 'Epic child task']]],
+            'isLast' => true,
+        ]),
+    ]);
+
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    expect($component->effects['partials']['schema.infolist.jiraContent'])
+        ->toContain('Subtasks')
+        ->toContain('Epic child task')
+        ->toContain('PROJ-71');
+
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), '/search/jql')
+        && $request['jql'] === 'parent = "PROJ-70" ORDER BY key ASC');
+});
+
+test('an Epic child lookup failure preserves the description and comments', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-70',
+        'issue_type' => 'Epic',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-70*' => Http::response(['renderedFields' => ['description' => '<p>Epic description</p>']]),
+        '*/rest/api/3/search/jql*' => Http::response([], 403),
+    ]);
+
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    expect($component->effects['partials']['schema.infolist.jiraContent'])
+        ->toContain('Epic description')
+        ->not->toContain('Subtasks');
+});
+
+test('the view page shows pull request status, links, branches and reviewers', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->withPullRequest('MERGED', 1)->create([
+        'jira_key' => 'PROJ-70',
+        'jira_id' => '10001',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-70*' => Http::response(['fields' => []]),
+        '*/rest/dev-status/1.0/issue/summary*' => Http::response([
+            'summary' => ['pullrequest' => ['byInstanceType' => ['bitbucket' => ['count' => 1]]]],
+        ]),
+        '*/rest/dev-status/1.0/issue/detail*' => Http::response([
+            'detail' => [['pullRequests' => [[
+                'id' => '17',
+                'name' => 'Ship <script>alert(1)</script>',
+                'url' => 'https://bitbucket.org/example/app/pull-requests/17',
+                'status' => 'MERGED',
+                'repositoryName' => 'example/app',
+                'author' => ['name' => 'Alice Author'],
+                'source' => ['branch' => 'feature-branch'],
+                'destination' => ['branch' => 'main'],
+                'reviewers' => [['name' => 'Bob Reviewer', 'approved' => true]],
+                'lastUpdate' => '2026-03-10T12:00:00.000+0000',
+            ]]]],
+        ]),
+    ]);
+
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertSee('1 pull request, merged')
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    expect($component->effects['partials']['schema.infolist.jiraContent'])
+        ->toContain('#17 Ship &lt;script&gt;alert(1)&lt;/script&gt;')
+        ->toContain('href="https://bitbucket.org/example/app/pull-requests/17"')
+        ->toContain('MERGED')
+        ->toContain('example/app')
+        ->toContain('feature-branch → main')
+        ->toContain('Alice Author')
+        ->toContain('Bob Reviewer (approved)')
+        ->not->toContain('<script>alert(1)</script>');
+
+    Http::assertSentCount(3);
+});
+
+test('a development API failure preserves task content and the synced pull request summary', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    $this->actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->withPullRequest('OPEN', 2)->create([
+        'jira_key' => 'PROJ-70',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-70*' => Http::response(['renderedFields' => ['description' => '<p>Still readable</p>']]),
+        '*/rest/dev-status/1.0/issue/summary*' => Http::response([], 403),
+    ]);
+
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->assertSee('2 pull requests, open')
+        ->call('loadDeferredSchema', 'infolist.jiraContent');
+
+    expect($component->effects['partials']['schema.infolist.jiraContent'])
+        ->toContain('Still readable')
+        ->toContain('Pull request details unavailable');
+});
+
+test('the view page renders each copy-as-markdown button in its header with its own content', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     $this->actingAs($user);
 
@@ -585,6 +776,7 @@ test('the view page renders copy-as-markdown buttons with the embedded markdown'
                 'comment' => [
                     'comments' => [
                         ['body' => '<p>Approved to merge.</p>'],
+                        ['body' => '<p>Another comment.</p>'],
                     ],
                 ],
             ],
@@ -611,6 +803,10 @@ test('the view page renders copy-as-markdown buttons with the embedded markdown'
                                 ],
                             ],
                         ],
+                        [
+                            'author' => ['displayName' => 'Another Commenter'],
+                            'created' => '2024-03-02T08:00:00.000+0000',
+                        ],
                     ],
                 ],
             ],
@@ -627,6 +823,13 @@ test('the view page renders copy-as-markdown buttons with the embedded markdown'
         ->toContain('Copy as Markdown')
         ->toContain('Ship the release today.')
         ->toContain('Approved to merge.');
+
+    preg_match_all('/<header\b[^>]*>(.*?)<\/header>/s', html_entity_decode($partial, ENT_QUOTES | ENT_HTML5), $headers);
+
+    expect(implode('\n', $headers[1]))
+        ->toContain("window.navigator.clipboard.writeText('Ship the release today.')")
+        ->toContain("window.navigator.clipboard.writeText('Approved to merge.')")
+        ->toContain("window.navigator.clipboard.writeText('Another comment.')");
 });
 
 test('adding a comment from the view page posts the ADF body to jira and notifies', function () {
@@ -742,7 +945,8 @@ test('the view page loads without a jira connection and shows content placeholde
 
     expect($partial)
         ->toContain('No description')
-        ->toContain('No comments');
+        ->toContain('No comments')
+        ->not->toContain('Subtasks');
 
     Http::assertNothingSent();
 });

@@ -9,11 +9,13 @@ use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraPriority;
+use App\Services\Jira\JiraPullRequestState;
 use App\Services\Jira\JiraStatus;
 use App\Services\Jira\JiraTextToAdf;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\RepeatableEntry\TableColumn;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
@@ -62,6 +64,12 @@ class JiraIssueInfolist
                             ->color('info')
                             ->placeholder('—')
                             ->state(fn (JiraIssue $record): array => $record->sprints ?? []),
+                        TextEntry::make('pr_state')
+                            ->label('Pull requests')
+                            ->state(fn (JiraIssue $record): ?string => $record->pr_state?->describe($record->pr_count))
+                            ->badge()
+                            ->color(fn (JiraIssue $record): string => $record->pr_state?->color() ?? 'gray')
+                            ->placeholder('None'),
                         TextEntry::make('summary')
                             ->columnSpanFull(),
                     ]),
@@ -91,6 +99,37 @@ class JiraIssueInfolist
                     ->schema(
                         Schema::make()
                             ->components([
+                                Section::make('Subtasks')
+                                    ->columnSpanFull()
+                                    ->visible(fn (ViewJiraIssue $livewire): bool => $livewire->subtasks() !== [])
+                                    ->schema([
+                                        RepeatableEntry::make('subtasks')
+                                            ->hiddenLabel()
+                                            ->state(fn (ViewJiraIssue $livewire): array => $livewire->subtasks())
+                                            ->table([
+                                                TableColumn::make('Key'),
+                                                TableColumn::make('Summary'),
+                                                TableColumn::make('Status'),
+                                                TableColumn::make('Priority'),
+                                            ])
+                                            ->schema([
+                                                TextEntry::make('key')
+                                                    ->url(fn (Get $get): ?string => $get('url'), shouldOpenInNewTab: true)
+                                                    ->color('primary'),
+                                                TextEntry::make('summary'),
+                                                TextEntry::make('status')
+                                                    ->badge()
+                                                    ->color(fn (?string $state, Get $get): string => JiraStatus::color($state, $get('status_category')))
+                                                    ->placeholder('—'),
+                                                TextEntry::make('priority')
+                                                    ->badge()
+                                                    ->color(fn (?string $state): string => JiraPriority::color($state))
+                                                    ->placeholder('—'),
+                                                TextEntry::make('url')->hidden(),
+                                                TextEntry::make('status_category')->hidden(),
+                                            ])
+                                            ->columnSpanFull(),
+                                    ]),
                                 Section::make('Description')
                                     ->columnSpanFull()
                                     ->afterHeader([
@@ -107,6 +146,47 @@ class JiraIssueInfolist
                                             ->placeholder('No description')
                                             ->columnSpanFull(),
                                     ]),
+                                Section::make('Pull requests')
+                                    ->columnSpanFull()
+                                    ->visible(fn (JiraIssue $record): bool => (int) $record->pr_count > 0)
+                                    ->schema([
+                                        RepeatableEntry::make('pull_requests')
+                                            ->hiddenLabel()
+                                            ->state(fn (ViewJiraIssue $livewire): array => $livewire->pullRequests())
+                                            ->placeholder('Pull request details unavailable')
+                                            ->table([
+                                                TableColumn::make('Pull request'),
+                                                TableColumn::make('Status'),
+                                                TableColumn::make('Repository'),
+                                                TableColumn::make('Branches'),
+                                                TableColumn::make('Author'),
+                                                TableColumn::make('Reviewers'),
+                                                TableColumn::make('Updated'),
+                                            ])
+                                            ->schema([
+                                                TextEntry::make('title')
+                                                    ->url(fn (Get $get): ?string => $get('url'), shouldOpenInNewTab: true)
+                                                    ->color('primary'),
+                                                TextEntry::make('status')
+                                                    ->badge()
+                                                    ->color(fn (?string $state): string => JiraPullRequestState::tryFrom((string) $state)?->color() ?? 'gray'),
+                                                TextEntry::make('repository')
+                                                    ->placeholder('—'),
+                                                TextEntry::make('source')
+                                                    ->formatStateUsing(fn (?string $state, Get $get): string => $state.' → '.$get('destination')),
+                                                TextEntry::make('author')
+                                                    ->placeholder('—'),
+                                                TextEntry::make('reviewers')
+                                                    ->listWithLineBreaks()
+                                                    ->placeholder('—'),
+                                                TextEntry::make('updated')
+                                                    ->dateTime()
+                                                    ->placeholder('—'),
+                                                TextEntry::make('url')->hidden(),
+                                                TextEntry::make('destination')->hidden(),
+                                            ])
+                                            ->columnSpanFull(),
+                                    ]),
                                 Section::make('Comments')
                                     ->key('comments')
                                     ->columnSpanFull()
@@ -120,33 +200,38 @@ class JiraIssueInfolist
                                             ->hiddenLabel()
                                             ->state(fn (ViewJiraIssue $livewire): array => $livewire->comments())
                                             ->placeholder('No comments')
+                                            ->contained(false)
                                             ->schema([
-                                                Fieldset::make('Details')
+                                                Section::make('Comment')
                                                     ->columnSpanFull()
-                                                    ->columns(3)
+                                                    ->afterHeader([
+                                                        self::copyMarkdownAction('copyCommentMarkdown')
+                                                            ->alpineClickHandler(fn (Get $get): string => self::copyMarkdownScript((string) $get('markdown'))),
+                                                    ])
                                                     ->schema([
-                                                        TextEntry::make('author')
-                                                            ->label('Author')
-                                                            ->weight('bold'),
-                                                        TextEntry::make('created')
-                                                            ->label('Posted')
-                                                            ->dateTime()
-                                                            ->placeholder('—'),
-                                                        TextEntry::make('created')
-                                                            ->label('Ago')
-                                                            ->since()
-                                                            ->placeholder('—'),
+                                                        Fieldset::make('Details')
+                                                            ->columnSpanFull()
+                                                            ->columns(3)
+                                                            ->schema([
+                                                                TextEntry::make('author')
+                                                                    ->label('Author')
+                                                                    ->weight('bold'),
+                                                                TextEntry::make('created')
+                                                                    ->label('Posted')
+                                                                    ->dateTime()
+                                                                    ->placeholder('—'),
+                                                                TextEntry::make('created')
+                                                                    ->label('Ago')
+                                                                    ->since()
+                                                                    ->placeholder('—'),
+                                                            ]),
+                                                        TextEntry::make('body')
+                                                            ->hiddenLabel()
+                                                            ->html()
+                                                            ->prose()
+                                                            ->columnSpanFull(),
+                                                        TextEntry::make('markdown')->hidden(),
                                                     ]),
-                                                TextEntry::make('body')
-                                                    ->hiddenLabel()
-                                                    ->html()
-                                                    ->prose()
-                                                    ->columnSpanFull(),
-                                                Actions::make([
-                                                    self::copyMarkdownAction('copyCommentMarkdown')
-                                                        ->alpineClickHandler(fn (Get $get): string => self::copyMarkdownScript((string) $get('markdown'))),
-                                                ])
-                                                    ->columnSpanFull(),
                                             ])
                                             ->columns(1),
                                     ]),

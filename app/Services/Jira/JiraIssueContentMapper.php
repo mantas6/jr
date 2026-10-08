@@ -22,6 +22,7 @@ class JiraIssueContentMapper
      *     description: string|null,
      *     descriptionMarkdown: string|null,
      *     comments: list<array{author: string, created: CarbonInterface|null, body: string, markdown: string}>,
+     *     subtasks: list<array{key: string, summary: string, status: string, status_category: string, priority: string, url: string|null}>,
      * }
      */
     public static function map(array $payload, ?string $jiraSiteUrl = null): array
@@ -32,7 +33,75 @@ class JiraIssueContentMapper
             'description' => $description,
             'descriptionMarkdown' => self::markdown(data_get($payload, 'fields.description'), $description),
             'comments' => self::mapComments($payload, $jiraSiteUrl),
+            'subtasks' => self::mapSubtasks($payload, $jiraSiteUrl),
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $pullRequests
+     * @return list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, updated: CarbonInterface|null}>
+     */
+    public static function mapPullRequests(array $pullRequests): array
+    {
+        $mapped = [];
+
+        foreach ($pullRequests as $pullRequest) {
+            $url = $pullRequest['url'] ?? null;
+            $reviewers = $pullRequest['reviewers'] ?? [];
+            $reviewerNames = [];
+
+            foreach (is_array($reviewers) ? $reviewers : [] as $reviewer) {
+                if (is_array($reviewer)) {
+                    $reviewerNames[] = (string) ($reviewer['name'] ?? 'Unknown').(!empty($reviewer['approved']) ? ' (approved)' : ' (pending)');
+                }
+            }
+
+            $mapped[] = [
+                'title' => '#'.(string) ($pullRequest['id'] ?? '').' '.(string) ($pullRequest['name'] ?? ''),
+                'url' => is_string($url) && in_array(mb_strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true) ? $url : null,
+                'status' => mb_strtoupper((string) ($pullRequest['status'] ?? '')),
+                'repository' => (string) ($pullRequest['repositoryName'] ?? ''),
+                'source' => (string) data_get($pullRequest, 'source.branch', ''),
+                'destination' => (string) data_get($pullRequest, 'destination.branch', ''),
+                'author' => (string) data_get($pullRequest, 'author.name', ''),
+                'reviewers' => $reviewerNames,
+                'updated' => self::parseDate($pullRequest['lastUpdate'] ?? null),
+            ];
+        }
+
+        return $mapped;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return list<array{key: string, summary: string, status: string, status_category: string, priority: string, url: string|null}>
+     */
+    private static function mapSubtasks(array $payload, ?string $jiraSiteUrl): array
+    {
+        $subtasks = data_get($payload, 'fields.subtasks');
+
+        if (!is_array($subtasks)) {
+            return [];
+        }
+
+        $mapped = [];
+
+        foreach ($subtasks as $subtask) {
+            if (!is_array($subtask) || !is_string($key = $subtask['key'] ?? null) || $key === '') {
+                continue;
+            }
+
+            $mapped[] = [
+                'key' => $key,
+                'summary' => (string) data_get($subtask, 'fields.summary', ''),
+                'status' => (string) data_get($subtask, 'fields.status.name', ''),
+                'status_category' => (string) data_get($subtask, 'fields.status.statusCategory.name', ''),
+                'priority' => (string) data_get($subtask, 'fields.priority.name', ''),
+                'url' => $jiraSiteUrl === null ? null : mb_rtrim($jiraSiteUrl, '/').'/browse/'.rawurlencode($key),
+            ];
+        }
+
+        return $mapped;
     }
 
     /**

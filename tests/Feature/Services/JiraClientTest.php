@@ -207,7 +207,7 @@ test('searchAssignableUsers sends project and query params', function () {
     });
 });
 
-test('getIssueContent requests description and comments with rendered fields', function () {
+test('getIssueContent requests description, comments and subtasks with rendered fields', function () {
     $body = [
         'renderedFields' => ['description' => '<p>Hello</p>'],
         'fields' => ['comment' => ['comments' => []]],
@@ -221,9 +221,54 @@ test('getIssueContent requests description and comments with rendered fields', f
 
     Http::assertSent(function (Request $request) {
         return str_starts_with($request->url(), 'https://example.atlassian.net/rest/api/3/issue/PROJ-1')
-            && $request['fields'] === 'description,comment'
+            && $request['fields'] === 'description,comment,subtasks'
             && $request['expand'] === 'renderedFields';
     });
+});
+
+test('getChildIssues follows all pages of the parent query', function () {
+    Http::fake([
+        '*/rest/api/3/search/jql*' => Http::sequence()
+            ->push(['issues' => [['key' => 'PROJ-2']], 'nextPageToken' => 'children-page-2', 'isLast' => false])
+            ->push(['issues' => [['key' => 'PROJ-3']], 'isLast' => true]),
+    ]);
+
+    expect(JiraClient::forUser(jiraUser())->getChildIssues('PROJ-1'))
+        ->toBe([['key' => 'PROJ-2'], ['key' => 'PROJ-3']]);
+
+    Http::assertSent(fn (Request $request): bool => $request['jql'] === 'parent = "PROJ-1" ORDER BY key ASC'
+        && ($request['nextPageToken'] ?? null) === 'children-page-2');
+});
+
+test('getPullRequests fetches details from each connected provider in the summary', function () {
+    Http::fake([
+        '*/rest/dev-status/1.0/issue/summary*' => Http::response([
+            'summary' => ['pullrequest' => ['byInstanceType' => ['bitbucket' => ['count' => 1], 'github' => ['count' => 1]]]],
+        ]),
+        '*/rest/dev-status/1.0/issue/detail*' => Http::sequence()
+            ->push(['detail' => [['pullRequests' => [['id' => '17', 'name' => 'Bitbucket change']]]]])
+            ->push(['detail' => [['pullRequests' => [['id' => '24', 'name' => 'GitHub change']]]]]),
+    ]);
+
+    expect(JiraClient::forUser(jiraUser())->getPullRequests('10001'))->toBe([
+        ['id' => '17', 'name' => 'Bitbucket change'],
+        ['id' => '24', 'name' => 'GitHub change'],
+    ]);
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/issue/detail')
+        && $request['issueId'] === '10001'
+        && $request['applicationType'] === 'github'
+        && $request['dataType'] === 'pullrequest');
+});
+
+test('getPullRequests does not request details when the summary has no providers', function () {
+    Http::fake([
+        '*/rest/dev-status/1.0/issue/summary*' => Http::response(['summary' => ['pullrequest' => ['byInstanceType' => []]]]),
+    ]);
+
+    expect(JiraClient::forUser(jiraUser())->getPullRequests('10001'))->toBe([]);
+
+    Http::assertSentCount(1);
 });
 
 test('addComment posts the ADF body to the comment endpoint and returns the decoded response', function () {

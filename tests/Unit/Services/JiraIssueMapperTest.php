@@ -322,6 +322,26 @@ test('map reads the legacy development summary format without cachedValue', func
         ->and($row['pr_count'])->toBe(1);
 });
 
+test('map reads the JSON embedded in Jira development field text', function () {
+    $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
+    $user->id = 1;
+    $value = '{pullrequest={dataType=pullrequest, state=MERGED, stateCount=5}, build={count=9}, json='.developmentSummary(5, 'MERGED').'}';
+
+    $row = JiraIssueMapper::map(developmentPayload($value), $user, null, null, 'customfield_10000');
+
+    expect($row['pr_state'])->toBe('MERGED')
+        ->and($row['pr_count'])->toBe(5);
+});
+
+test('live PR summary refresh is only needed for missing PR data with linked commits', function (mixed $value, bool $expected) {
+    expect(JiraIssueMapper::needsPullRequestRefresh($value))->toBe($expected);
+})->with([
+    'no development data' => [null, false],
+    'no linked activity' => [json_encode(['summary' => []], JSON_THROW_ON_ERROR), false],
+    'complete PR summary' => [developmentSummary(2, 'MERGED'), false],
+    'commits but no cached PRs' => [json_encode(['summary' => ['repository' => ['overall' => ['count' => 7]]]], JSON_THROW_ON_ERROR), true],
+]);
+
 test('map returns no pull request data when the development value has none', function (mixed $value) {
     $user = User::factory()->make(['jira_site_url' => 'https://example.atlassian.net']);
     $user->id = 1;
@@ -333,6 +353,7 @@ test('map returns no pull request data when the development value has none', fun
 })->with([
     'missing field' => [null],
     'invalid json' => ['{not json'],
+    'invalid embedded json' => ['{pullrequest={state=MERGED}, json={not json}}'],
     'zero pull requests' => [json_encode(['cachedValue' => ['summary' => ['pullrequest' => ['overall' => ['count' => 0]]]]])],
     'no pull request summary' => [json_encode(['cachedValue' => ['summary' => ['build' => ['overall' => ['count' => 2]]]]])],
 ]);

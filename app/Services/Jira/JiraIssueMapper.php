@@ -133,6 +133,60 @@ class JiraIssueMapper
     }
 
     /**
+     * Extract the overall pull request state and count from a Jira Development
+     * summary field value.
+     *
+     * Jira returns JSON, either inside `json=` in its legacy text wrapper,
+     * wrapped in `cachedValue`, or as a bare `{"summary": ...}`. Invalid
+     * JSON, a missing summary or zero pull requests yield no data; an
+     * unrecognised state yields a null state.
+     *
+     * @return array{state: JiraPullRequestState|null, count: int|null}
+     */
+    public static function extractPullRequestSummary(mixed $value): array
+    {
+        $none = ['state' => null, 'count' => null];
+        $decoded = self::decodeDevelopmentField($value);
+
+        if ($decoded === null) {
+            return $none;
+        }
+
+        $overall = data_get($decoded, 'cachedValue.summary.pullrequest.overall')
+            ?? data_get($decoded, 'summary.pullrequest.overall');
+
+        $count = is_array($overall) ? self::nullableInt($overall['count'] ?? null) : null;
+
+        if ($count === null || $count < 1) {
+            return $none;
+        }
+
+        $state = $overall['state'] ?? null;
+
+        return [
+            'state' => is_string($state) ? JiraPullRequestState::tryFrom(mb_strtoupper($state)) : null,
+            'count' => $count,
+        ];
+    }
+
+    /**
+     * Jira's stale development field can list linked commits but omit real PRs.
+     * Only those issues need an additional live summary request during sync.
+     */
+    public static function needsPullRequestRefresh(mixed $value): bool
+    {
+        if (self::extractPullRequestSummary($value)['count'] !== null) {
+            return false;
+        }
+
+        $decoded = self::decodeDevelopmentField($value);
+        $repositoryCount = data_get($decoded, 'cachedValue.summary.repository.overall.count')
+            ?? data_get($decoded, 'summary.repository.overall.count');
+
+        return is_numeric($repositoryCount) && $repositoryCount > 0;
+    }
+
+    /**
      * Cast a value to a non-empty string, or null when absent.
      */
     private static function nullableString(mixed $value): ?string
@@ -203,44 +257,24 @@ class JiraIssueMapper
     }
 
     /**
-     * Extract the overall pull request state and count from a Jira Development
-     * summary field value.
-     *
-     * Jira returns the value as a JSON string, either wrapped in `cachedValue`
-     * (current format) or as a bare `{"summary": ...}` (legacy format). Invalid
-     * JSON, a missing summary or zero pull requests yield no data; an
-     * unrecognised state yields a null state.
-     *
-     * @return array{state: JiraPullRequestState|null, count: int|null}
+     * @return array<string, mixed>|null
      */
-    private static function extractPullRequestSummary(mixed $value): array
+    private static function decodeDevelopmentField(mixed $value): ?array
     {
-        $none = ['state' => null, 'count' => null];
+        if (is_array($value)) {
+            return $value;
+        }
 
         if (!is_string($value) || $value === '') {
-            return $none;
+            return null;
         }
 
         $decoded = json_decode($value, true);
 
-        if (!is_array($decoded)) {
-            return $none;
+        if (!is_array($decoded) && preg_match('/\bjson=(\{.*\})\s*\}$/s', $value, $matches) === 1) {
+            $decoded = json_decode($matches[1], true);
         }
 
-        $overall = data_get($decoded, 'cachedValue.summary.pullrequest.overall')
-            ?? data_get($decoded, 'summary.pullrequest.overall');
-
-        $count = is_array($overall) ? self::nullableInt($overall['count'] ?? null) : null;
-
-        if ($count === null || $count < 1) {
-            return $none;
-        }
-
-        $state = $overall['state'] ?? null;
-
-        return [
-            'state' => is_string($state) ? JiraPullRequestState::tryFrom(mb_strtoupper($state)) : null,
-            'count' => $count,
-        ];
+        return is_array($decoded) ? $decoded : null;
     }
 }

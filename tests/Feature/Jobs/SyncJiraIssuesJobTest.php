@@ -165,6 +165,39 @@ test('it syncs the pull request summary using the auto-detected development fiel
     Http::assertSent(fn (Request $request) => isset($request['fields']) && str_contains((string) $request['fields'], 'customfield_10000'));
 });
 
+test('sync uses the live PR summary when cached development data only includes commits', function (int $httpStatus, ?string $state, ?int $count) {
+    $user = syncUser();
+    $issue = jiraIssuePayload('1001', 'PROJ-1', 'First issue');
+    $issue['fields']['customfield_10000'] = '{repository={count=7}, json='.json_encode([
+        'cachedValue' => ['summary' => ['repository' => ['overall' => ['count' => 7]]]],
+    ], JSON_THROW_ON_ERROR).'}';
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([
+            ['id' => 'customfield_10000', 'schema' => ['custom' => 'com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf']],
+        ]),
+        '*/rest/api/3/search/jql*' => Http::response(['issues' => [$issue], 'isLast' => true]),
+        '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
+        '*/rest/dev-status/1.0/issue/summary*' => Http::response([
+            'summary' => ['pullrequest' => ['overall' => ['count' => 2, 'state' => 'MERGED']]],
+        ], $httpStatus),
+    ]);
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    $synced = JiraIssue::where('jira_id', '1001')->firstOrFail();
+
+    expect($synced->pr_state?->value)->toBe($state)
+        ->and($synced->pr_count)->toBe($count);
+    expect($user->fresh()->jira_last_sync_error)->toBeNull();
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/dev-status/1.0/issue/summary')
+        && $request['issueId'] === '1001');
+})->with([
+    'live summary has missing PRs' => [200, 'MERGED', 2],
+    'live summary unavailable still syncs issue' => [403, null, null],
+]);
+
 test('a sync without a sprint field stores null sprints', function () {
     $user = syncUser();
 

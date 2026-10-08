@@ -138,7 +138,7 @@ final class JiraClient
     }
 
     /**
-     * Fetch an issue's description and comments, including Jira's rendered HTML.
+     * Fetch an issue's description, comments and subtasks, including rendered HTML.
      *
      * @return array<string, mixed>
      */
@@ -147,9 +147,76 @@ final class JiraClient
         return $this->send(fn (PendingRequest $request): Response => $request->get(
             "/rest/api/3/issue/{$key}",
             [
-                'fields' => 'description,comment',
+                'fields' => 'description,comment,subtasks',
                 'expand' => 'renderedFields',
             ],
+        ))->json();
+    }
+
+    /**
+     * Fetch all child issues of an Epic, following cursor pagination.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function getChildIssues(string $key): array
+    {
+        $issues = [];
+        $nextPageToken = null;
+
+        do {
+            $page = $this->searchIssues('parent = '.json_encode($key, JSON_THROW_ON_ERROR).' ORDER BY key ASC', $nextPageToken);
+            $issues = [...$issues, ...$page['issues']];
+            $nextPageToken = $page['nextPageToken'] ?? null;
+        } while (!($page['isLast'] ?? ($nextPageToken === null)) && $nextPageToken !== null);
+
+        return $issues;
+    }
+
+    /**
+     * Fetch linked pull requests from the providers listed in Jira's development summary.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function getPullRequests(string $issueId): array
+    {
+        $summary = $this->getDevelopmentSummary($issueId);
+        $providers = data_get($summary, 'summary.pullrequest.byInstanceType', []);
+
+        if (!is_array($providers)) {
+            return [];
+        }
+
+        $pullRequests = [];
+
+        foreach (array_keys($providers) as $provider) {
+            $payload = $this->send(fn (PendingRequest $request): Response => $request->get(
+                '/rest/dev-status/1.0/issue/detail',
+                ['issueId' => $issueId, 'applicationType' => $provider, 'dataType' => 'pullrequest'],
+            ))->json();
+            $details = data_get($payload, 'detail', []);
+
+            foreach (is_array($details) ? $details : [] as $detail) {
+                $requests = data_get($detail, 'pullRequests', []);
+
+                if (is_array($requests)) {
+                    $pullRequests = [...$pullRequests, ...array_values(array_filter($requests, is_array(...)))];
+                }
+            }
+        }
+
+        return $pullRequests;
+    }
+
+    /**
+     * Fetch Jira's live development summary when the cached custom field is incomplete.
+     *
+     * @return array<string, mixed>
+     */
+    public function getDevelopmentSummary(string $issueId): array
+    {
+        return $this->send(fn (PendingRequest $request): Response => $request->get(
+            '/rest/dev-status/1.0/issue/summary',
+            ['issueId' => $issueId],
         ))->json();
     }
 

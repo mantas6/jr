@@ -22,11 +22,16 @@ class ViewJiraIssue extends ViewRecord
     protected static string $resource = JiraIssueResource::class;
 
     /**
-     * The issue's description and comments, fetched live from Jira.
+     * The issue's description, comments and child issues, fetched live from Jira.
      *
-     * @var array{description: string|null, descriptionMarkdown: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string, markdown: string}>}|null
+     * @var array{description: string|null, descriptionMarkdown: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string, markdown: string}>, subtasks: list<array{key: string, summary: string, status: string, status_category: string, priority: string, url: string|null}>}|null
      */
     private ?array $issueContent = null;
+
+    /**
+     * @var list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, updated: CarbonInterface|null}>|null
+     */
+    private ?array $pullRequestDetails = null;
 
     /**
      * Mark the issue as viewed so it drops off the concerning list's "Unread"
@@ -74,12 +79,43 @@ class ViewJiraIssue extends ViewRecord
     }
 
     /**
+     * @return list<array{key: string, summary: string, status: string, status_category: string, priority: string, url: string|null}>
+     */
+    public function subtasks(): array
+    {
+        return $this->issueContent()['subtasks'];
+    }
+
+    /**
+     * @return list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, updated: CarbonInterface|null}>
+     */
+    public function pullRequests(): array
+    {
+        if ($this->pullRequestDetails !== null) {
+            return $this->pullRequestDetails;
+        }
+
+        if (!$this->currentUser()->hasJiraConnection() || !$this->currentRecord()->pr_count) {
+            return $this->pullRequestDetails = [];
+        }
+
+        try {
+            return $this->pullRequestDetails = JiraIssueContentMapper::mapPullRequests(
+                JiraClient::forUser($this->currentUser())->getPullRequests($this->currentRecord()->jira_id),
+            );
+        } catch (JiraApiException) {
+            return $this->pullRequestDetails = [];
+        }
+    }
+
+    /**
      * Drop the memoized description and comments so the next render refetches
      * the latest content from Jira (e.g. after posting a new comment).
      */
     public function refreshIssueContent(): void
     {
         $this->issueContent = null;
+        $this->pullRequestDetails = null;
 
         $this->dispatch('$refresh');
     }
@@ -103,7 +139,7 @@ class ViewJiraIssue extends ViewRecord
      * Fetch (and memoize) the issue's description and comments from Jira so a
      * single API call feeds both the description and comments sections.
      *
-     * @return array{description: string|null, descriptionMarkdown: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string, markdown: string}>}
+     * @return array{description: string|null, descriptionMarkdown: string|null, comments: list<array{author: string, created: CarbonInterface|null, body: string, markdown: string}>, subtasks: list<array{key: string, summary: string, status: string, status_category: string, priority: string, url: string|null}>}
      */
     private function issueContent(): array
     {
@@ -114,15 +150,25 @@ class ViewJiraIssue extends ViewRecord
         $user = $this->currentUser();
 
         if (!$user->hasJiraConnection()) {
-            return $this->issueContent = ['description' => null, 'descriptionMarkdown' => null, 'comments' => []];
+            return $this->issueContent = JiraIssueContentMapper::map([]);
         }
 
         try {
-            $payload = JiraClient::forUser($user)->getIssueContent($this->currentRecord()->jira_key);
+            $client = JiraClient::forUser($user);
+            $record = $this->currentRecord();
+            $payload = $client->getIssueContent($record->jira_key);
+
+            if (mb_strtolower($record->issue_type) === 'epic') {
+                try {
+                    $payload['fields']['subtasks'] = $client->getChildIssues($record->jira_key);
+                } catch (JiraApiException) {
+                    $payload['fields']['subtasks'] ??= [];
+                }
+            }
 
             return $this->issueContent = JiraIssueContentMapper::map($payload, $user->jira_site_url);
         } catch (JiraApiException) {
-            return $this->issueContent = ['description' => null, 'descriptionMarkdown' => null, 'comments' => []];
+            return $this->issueContent = JiraIssueContentMapper::map([]);
         }
     }
 
