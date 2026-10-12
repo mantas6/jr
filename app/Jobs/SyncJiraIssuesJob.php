@@ -58,14 +58,6 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
     ];
 
     /**
-     * The number of times the job may be attempted.
-     *
-     * Allows a few overlap-release retries when a forced run queues behind a
-     * scheduled sync that is still in flight.
-     */
-    public int $tries = 5;
-
-    /**
      * The number of seconds the job may run before timing out.
      */
     public int $timeout = 300;
@@ -94,18 +86,32 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
     /**
      * Get the middleware the job should pass through.
      *
-     * A forced run queues behind an in-flight sync by releasing back onto the
-     * queue rather than being dropped.
+     * An incremental run is dropped while another sync for the user is in
+     * flight, since that sync already covers it. A forced run queues behind it
+     * by releasing back onto the queue. The lock outlives the job timeout only
+     * briefly, so a worker killed mid-sync does not block syncs for long.
      *
      * @return array<int, object>
      */
     public function middleware(): array
     {
+        $middleware = (new WithoutOverlapping((string) $this->user->id))
+            ->expireAfter($this->timeout + 30);
+
         return [
-            (new WithoutOverlapping((string) $this->user->id))
-                ->releaseAfter(15)
-                ->expireAfter(600),
+            $this->force ? $middleware->releaseAfter(15) : $middleware->dontRelease(),
         ];
+    }
+
+    /**
+     * Determine the time at which the job should stop being retried.
+     *
+     * Overlap releases do not count against a fixed number of tries, so a
+     * forced run keeps waiting until any in-flight or abandoned lock is gone.
+     */
+    public function retryUntil(): Carbon
+    {
+        return Carbon::now()->addMinutes(10);
     }
 
     /**

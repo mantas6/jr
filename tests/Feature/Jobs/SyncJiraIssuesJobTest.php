@@ -469,16 +469,29 @@ test('the job is unique per user so a duplicate dispatch is ignored', function (
     Queue::assertPushed(SyncJiraIssuesJob::class, 1);
 });
 
-test('the job releases behind an in-flight sync per user', function () {
+test('an incremental run is dropped behind an in-flight sync while a forced run waits for it', function (bool $force, ?int $releaseAfter) {
     $user = syncUser();
 
-    $middleware = collect((new SyncJiraIssuesJob($user))->middleware())
+    $middleware = collect((new SyncJiraIssuesJob($user, $force))->middleware())
         ->firstWhere(fn ($m): bool => $m instanceof WithoutOverlapping);
 
     expect($middleware)->not->toBeNull()
         ->and($middleware->key)->toBe((string) $user->id)
-        ->and($middleware->releaseAfter)->toBe(15)
-        ->and($middleware->expiresAfter)->toBe(600);
+        ->and($middleware->releaseAfter)->toBe($releaseAfter)
+        ->and($middleware->expiresAfter)->toBe(330);
+})->with([
+    'incremental' => [false, null],
+    'forced' => [true, 15],
+]);
+
+test('a forced run keeps retrying until an abandoned overlap lock has expired', function () {
+    $job = new SyncJiraIssuesJob(syncUser(), force: true);
+
+    $overlapLockSeconds = collect($job->middleware())
+        ->firstWhere(fn ($m): bool => $m instanceof WithoutOverlapping)
+        ->expiresAfter;
+
+    expect($job->retryUntil()->isAfter(now()->addSeconds($overlapLockSeconds)))->toBeTrue();
 });
 
 test('a successful sync dispatches the mentions scan job', function () {
