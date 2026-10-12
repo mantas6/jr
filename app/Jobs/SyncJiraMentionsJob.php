@@ -64,11 +64,20 @@ class SyncJiraMentionsJob implements ShouldBeUnique, ShouldQueue
     /**
      * Get the middleware the job should pass through.
      *
+     * A scan is dropped while another scan for the user is in flight, since
+     * the next issue sync dispatches a fresh one. The lock outlives the job
+     * timeout only briefly, so a worker killed mid-scan does not block scans
+     * for long.
+     *
      * @return array<int, object>
      */
     public function middleware(): array
     {
-        return [(new WithoutOverlapping('mentions:'.$this->user->id))->expireAfter(600)];
+        return [
+            (new WithoutOverlapping('mentions:'.$this->user->id))
+                ->dontRelease()
+                ->expireAfter($this->timeout + 30),
+        ];
     }
 
     /**

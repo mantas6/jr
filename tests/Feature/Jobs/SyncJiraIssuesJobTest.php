@@ -469,7 +469,7 @@ test('the job is unique per user so a duplicate dispatch is ignored', function (
     Queue::assertPushed(SyncJiraIssuesJob::class, 1);
 });
 
-test('an incremental run is dropped behind an in-flight sync while a forced run waits for it', function (bool $force, ?int $releaseAfter) {
+test('a non-forced run is dropped behind an in-flight sync while a forced run waits for it', function (bool $force, ?int $releaseAfter) {
     $user = syncUser();
 
     $middleware = collect((new SyncJiraIssuesJob($user, $force))->middleware())
@@ -480,7 +480,7 @@ test('an incremental run is dropped behind an in-flight sync while a forced run 
         ->and($middleware->releaseAfter)->toBe($releaseAfter)
         ->and($middleware->expiresAfter)->toBe(330);
 })->with([
-    'incremental' => [false, null],
+    'non-forced' => [false, null],
     'forced' => [true, 15],
 ]);
 

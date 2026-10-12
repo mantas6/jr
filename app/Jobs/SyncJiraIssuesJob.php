@@ -86,10 +86,11 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
     /**
      * Get the middleware the job should pass through.
      *
-     * An incremental run is dropped while another sync for the user is in
-     * flight, since that sync already covers it. A forced run queues behind it
-     * by releasing back onto the queue. The lock outlives the job timeout only
-     * briefly, so a worker killed mid-sync does not block syncs for long.
+     * A non-forced run is dropped while another sync for the user is in
+     * flight, since the next scheduled run picks up anything it misses. A
+     * forced run queues behind it by releasing back onto the queue. The lock
+     * outlives the job timeout only briefly, so a worker killed mid-sync does
+     * not block syncs for long.
      *
      * @return array<int, object>
      */
@@ -106,8 +107,8 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
     /**
      * Determine the time at which the job should stop being retried.
      *
-     * Overlap releases do not count against a fixed number of tries, so a
-     * forced run keeps waiting until any in-flight or abandoned lock is gone.
+     * Used instead of a fixed number of tries so a forced run released behind
+     * an in-flight or abandoned overlap lock keeps waiting until it is gone.
      */
     public function retryUntil(): Carbon
     {

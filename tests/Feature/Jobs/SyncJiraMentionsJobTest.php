@@ -4,6 +4,7 @@ use App\Jobs\SyncJiraMentionsJob;
 use App\Models\JiraIssue;
 use App\Models\User;
 use Illuminate\Http\Client\Request;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -296,4 +297,16 @@ test('it fetches the full comment list when the embedded comments are truncated'
 
     Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/rest/api/3/issue/PROJ-35/comment')
         && (int) $request['startAt'] === 2);
+});
+
+test('a scan is dropped behind an in-flight scan per user', function () {
+    $user = mentionsUser();
+
+    $middleware = collect((new SyncJiraMentionsJob($user))->middleware())
+        ->firstWhere(fn ($m): bool => $m instanceof WithoutOverlapping);
+
+    expect($middleware)->not->toBeNull()
+        ->and($middleware->key)->toBe('mentions:'.$user->id)
+        ->and($middleware->releaseAfter)->toBeNull()
+        ->and($middleware->expiresAfter)->toBe(330);
 });
