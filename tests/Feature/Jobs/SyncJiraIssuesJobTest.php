@@ -18,7 +18,13 @@ use function Pest\Laravel\travelTo;
 
 // The sync job dispatches the mentions job at the end; fake the queue so the
 // synchronous test connection does not run it inline (and exhaust HTTP fakes).
-beforeEach(fn () => Queue::fake());
+// Every sync also fetches the project's versions; release syncing is covered
+// in SyncJiraReleasesTest, so these tests see a project without versions.
+beforeEach(function () {
+    Queue::fake();
+
+    Http::fake(['*/rest/api/3/project/*/versions' => Http::response([])]);
+});
 
 /**
  * Build a connected user for the sync job.

@@ -65,6 +65,16 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * The Jira project versions (releases) synced for this user.
+     *
+     * @return HasMany<JiraRelease, $this>
+     */
+    public function jiraReleases(): HasMany
+    {
+        return $this->hasMany(JiraRelease::class);
+    }
+
+    /**
      * Determine whether the user has a fully configured Jira connection.
      */
     public function hasJiraConnection(): bool

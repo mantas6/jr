@@ -120,6 +120,33 @@ class JiraIssueMapper
     }
 
     /**
+     * The Jira version ids listed in an issue payload's `fixVersions` field.
+     *
+     * @param  array<string, mixed>  $issue
+     * @return list<string>
+     */
+    public static function fixVersionIds(array $issue): array
+    {
+        $fixVersions = data_get($issue, 'fields.fixVersions');
+
+        if (!is_array($fixVersions)) {
+            return [];
+        }
+
+        $ids = [];
+
+        foreach ($fixVersions as $version) {
+            $id = is_array($version) ? ($version['id'] ?? null) : null;
+
+            if (is_scalar($id) && (string) $id !== '') {
+                $ids[] = (string) $id;
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
      * Parse an optional Jira timestamp string into a Carbon instance in the
      * application timezone.
      */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Jira;
 
 use App\Models\JiraIssue;
+use App\Models\JiraRelease;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 
@@ -131,7 +132,7 @@ final class JiraIssueActions
             );
             $attributes['concerning_since'] = Carbon::now();
 
-            JiraIssue::create($attributes);
+            $this->linkReleases(JiraIssue::create($attributes), $payload);
 
             $added[] = $key;
         }
@@ -177,8 +178,26 @@ final class JiraIssueActions
         }
 
         $issue->update($attributes);
+        $this->linkReleases($issue, $payload);
 
         return $issue;
+    }
+
+    /**
+     * Link the issue to the user's synced releases listed in the payload's
+     * `fixVersions`, replacing its previous links.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function linkReleases(JiraIssue $issue, array $payload): void
+    {
+        $issue->releases()->sync(
+            JiraRelease::query()
+                ->where('user_id', $this->user->id)
+                ->whereIn('jira_id', JiraIssueMapper::fixVersionIds($payload))
+                ->pluck('id')
+                ->all(),
+        );
     }
 
     /**

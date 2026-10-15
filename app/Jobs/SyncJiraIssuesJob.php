@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Models\JiraIssue;
+use App\Models\JiraRelease;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraIssueContentMapper;
 use App\Services\Jira\JiraIssueMapper;
 use App\Services\Jira\JiraPullRequestState;
+use App\Services\Jira\JiraReleaseMapper;
 use App\Services\Jira\JiraTransitionsCache;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -18,11 +20,13 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\UniqueFor;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
- * Pull every issue in the user's configured Jira project into the local
- * `jira_issues` table and warm the inline status-transition cache.
+ * Pull every version (release) and issue in the user's configured Jira project
+ * into the local `jira_releases` and `jira_issues` tables, link issues to their
+ * fix versions, and warm the inline status-transition cache.
  */
 #[UniqueFor(900)]
 class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
@@ -56,6 +60,29 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         'raw',
         'last_synced_at',
     ];
+
+    /**
+     * The columns updated when an existing release row is matched during upsert.
+     *
+     * @var list<string>
+     */
+    private const RELEASE_UPSERT_COLUMNS = [
+        'name',
+        'description',
+        'released',
+        'archived',
+        'overdue',
+        'start_date',
+        'release_date',
+        'jira_url',
+        'raw',
+        'last_synced_at',
+    ];
+
+    /**
+     * The pivot table linking issues to the releases in their `fixVersions`.
+     */
+    private const RELEASE_PIVOT_TABLE = 'jira_issue_jira_release';
 
     /**
      * The number of seconds the job may run before timing out.
@@ -142,8 +169,8 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * Pull issues from Jira into the local table, warm the transitions cache,
-     * and stamp the sync timestamps.
+     * Pull releases and issues from Jira into the local tables, warm the
+     * transitions cache, and stamp the sync timestamps.
      */
     private function sync(): void
     {
@@ -152,6 +179,8 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
 
         $client = JiraClient::forUser($this->user);
         $jql = $this->buildJql($isFullSync, $now);
+
+        $releaseIds = $this->syncReleases($client, $now);
 
         $sprintFieldId = $client->sprintFieldId();
         $developmentFieldId = $client->developmentFieldId();
@@ -178,8 +207,12 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
 
             $rows = [];
 
+            /** @var array<string, list<string>> $fixVersions Keyed by issue jira_id. */
+            $fixVersions = [];
+
             foreach ($issues as $issue) {
                 $row = JiraIssueMapper::mapForUpsert($issue, $this->user, $now, $sprintFieldId, $developmentFieldId);
+                $fixVersions[(string) $row['jira_id']] = JiraIssueMapper::fixVersionIds($issue);
 
                 if (array_key_exists((string) $row['jira_id'], $developmentSummaries)) {
                     $pullRequests = JiraIssueMapper::extractPullRequestSummary($developmentSummaries[$row['jira_id']]);
@@ -196,6 +229,8 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
             foreach (array_chunk($rows, 100) as $chunk) {
                 $this->upsertChunk($chunk, $now);
             }
+
+            $this->syncReleaseLinks($fixVersions, $releaseIds);
 
             $nextPageToken = $page['nextPageToken'] ?? null;
             $isLast = $page['isLast'] ?? ($nextPageToken === null);
@@ -216,6 +251,107 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         $this->user->forceFill($attributes)->save();
 
         SyncJiraMentionsJob::dispatch($this->user);
+    }
+
+    /**
+     * Upsert every version of the user's project and delete local releases
+     * that no longer exist in Jira (their issue links cascade away).
+     *
+     * A failed lookup must not fail the whole sync: the previously synced
+     * releases are kept and issues are still linked against them.
+     *
+     * @return array<string, int> Local release ids keyed by Jira version id.
+     */
+    private function syncReleases(JiraClient $client, Carbon $now): array
+    {
+        try {
+            $versions = $client->getProjectVersions((string) $this->user->jira_project_key);
+        } catch (JiraApiException) {
+            return $this->releaseIds();
+        }
+
+        $rows = [];
+
+        foreach ($versions as $version) {
+            $row = JiraReleaseMapper::mapForUpsert($version, $this->user, $now);
+
+            if ($row['jira_id'] !== '') {
+                $rows[] = $row;
+            }
+        }
+
+        foreach (array_chunk($rows, 100) as $chunk) {
+            JiraRelease::upsert($chunk, ['user_id', 'jira_id'], self::RELEASE_UPSERT_COLUMNS);
+        }
+
+        JiraRelease::query()
+            ->where('user_id', $this->user->id)
+            ->whereNotIn('jira_id', array_column($rows, 'jira_id'))
+            ->delete();
+
+        return $this->releaseIds();
+    }
+
+    /**
+     * The user's local release ids keyed by Jira version id.
+     *
+     * @return array<string, int>
+     */
+    private function releaseIds(): array
+    {
+        $releaseIds = [];
+
+        foreach (JiraRelease::query()->where('user_id', $this->user->id)->get(['id', 'jira_id']) as $release) {
+            $releaseIds[$release->jira_id] = $release->id;
+        }
+
+        return $releaseIds;
+    }
+
+    /**
+     * Replace the release links of the given (just upserted) issues with the
+     * releases in their `fixVersions`. Versions not synced locally are skipped;
+     * the next sync of the issue links them.
+     *
+     * @param  array<string, list<string>>  $fixVersions  Jira version ids keyed by issue jira_id.
+     * @param  array<string, int>  $releaseIds  Local release ids keyed by Jira version id.
+     */
+    private function syncReleaseLinks(array $fixVersions, array $releaseIds): void
+    {
+        if ($fixVersions === []) {
+            return;
+        }
+
+        $issueIds = JiraIssue::query()
+            ->where('user_id', $this->user->id)
+            ->whereIn('jira_id', array_map(strval(...), array_keys($fixVersions)))
+            ->pluck('id', 'jira_id');
+
+        $links = [];
+
+        foreach ($fixVersions as $jiraId => $versionIds) {
+            $issueId = $issueIds->get((string) $jiraId);
+
+            if ($issueId === null) {
+                continue;
+            }
+
+            foreach ($versionIds as $versionId) {
+                if (isset($releaseIds[$versionId])) {
+                    $links[] = ['jira_issue_id' => $issueId, 'jira_release_id' => $releaseIds[$versionId]];
+                }
+            }
+        }
+
+        DB::transaction(function () use ($issueIds, $links): void {
+            DB::table(self::RELEASE_PIVOT_TABLE)
+                ->whereIn('jira_issue_id', $issueIds->values()->all())
+                ->delete();
+
+            foreach (array_chunk($links, 500) as $chunk) {
+                DB::table(self::RELEASE_PIVOT_TABLE)->insert($chunk);
+            }
+        });
     }
 
     /**

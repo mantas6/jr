@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\JiraIssue;
+use App\Models\JiraRelease;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraIssueActions;
@@ -140,6 +141,27 @@ test('assign writes to jira and refreshes the row', function () {
             && $request->method() === 'PUT'
             && $request['accountId'] === 'acc-9';
     });
+});
+
+test('refreshing an issue replaces its release links from the fix versions', function () {
+    $user = User::factory()->withJiraConnection()->create();
+    $issue = JiraIssue::factory()->for($user)->create(['jira_key' => 'PROJ-9']);
+    $previous = JiraRelease::factory()->for($user)->create(['jira_id' => '20001']);
+    $current = JiraRelease::factory()->for($user)->create(['jira_id' => '20002']);
+    JiraRelease::factory()->create(['jira_id' => '20003']);
+    $issue->releases()->attach($previous);
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
+        '*/rest/api/3/issue/PROJ-9/assignee' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-9*' => Http::response(issuePayload('PROJ-9', [
+            'fixVersions' => [['id' => '20002'], ['id' => '20003']],
+        ])),
+    ]);
+
+    JiraIssueActions::forUser($user)->assign($issue, null);
+
+    expect($issue->releases()->pluck('jira_releases.id')->all())->toBe([$current->id]);
 });
 
 test('refreshing an issue updates its sprints and pull request summary from the custom fields', function () {

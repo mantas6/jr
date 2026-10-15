@@ -29,6 +29,7 @@ final class JiraClient
         'created',
         'updated',
         'timeoriginalestimate',
+        'fixVersions',
     ];
 
     /**
@@ -122,6 +123,23 @@ final class JiraClient
         }
 
         return $this->send(fn (PendingRequest $request): Response => $request->get('/rest/api/3/search/jql', $query))->json();
+    }
+
+    /**
+     * Fetch every version (release) of a project. Jira returns them all in one
+     * unpaginated response, in the project's release order.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function getProjectVersions(string $projectKey): array
+    {
+        $versions = $this->send(fn (PendingRequest $request): Response => $request->get(
+            '/rest/api/3/project/'.rawurlencode($projectKey).'/versions',
+        ))->json();
+
+        return is_array($versions)
+            ? array_values(array_filter($versions, is_array(...)))
+            : [];
     }
 
     /**
