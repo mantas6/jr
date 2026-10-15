@@ -235,8 +235,9 @@ class JiraIssue extends Model
 
     /**
      * Scope the query to issues the user dismissed that are still open and not
-     * concerning again (a re-surfaced task stays concerning). Being dismissed
-     * proves the task was once on the concerning list.
+     * concerning again (a re-surfaced task stays concerning), limited to those
+     * updated in Jira within the last month so stale tasks drop off. Being
+     * dismissed proves the task was once on the concerning list.
      *
      * Excludes {@see scopeConcerning()} through a subquery rather than negating
      * its conditions, so null columns cannot drop a row from both lists.
@@ -248,6 +249,7 @@ class JiraIssue extends Model
     {
         return $query->whereNotNull('dismissed_at')
             ->open()
+            ->where('jira_updated_at', '>=', now()->subMonth())
             ->whereNotIn('id', self::query()->select('id')->where('user_id', $user->id)->concerning($user));
     }
 

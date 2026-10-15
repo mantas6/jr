@@ -60,7 +60,7 @@ class JiraIssueFactory extends Factory
             'last_commented_at' => null,
             'jira_url' => $siteUrl.'/browse/'.$jiraKey,
             'jira_created_at' => fake()->dateTimeBetween('-1 year', '-1 month'),
-            'jira_updated_at' => fake()->dateTimeBetween('-1 month', 'now'),
+            'jira_updated_at' => fake()->dateTimeBetween('-3 weeks', 'now'),
             'raw' => ['fields' => []],
             'last_synced_at' => now(),
         ];

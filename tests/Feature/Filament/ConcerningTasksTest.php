@@ -254,6 +254,24 @@ test('the passed tab shows dismissed tasks that are still open and not concernin
         ->assertCanNotSeeTableRecords([$resurfaced, $dismissedClosed, $neverDismissed]);
 });
 
+test('the passed tab hides tasks not updated in Jira for over a month', function () {
+    $user = signedInUser();
+
+    $recent = JiraIssue::factory()->for($user)->dismissed()->create([
+        'assignee_account_id' => 'acc-me',
+        'jira_updated_at' => now()->subMonth()->addDay(),
+    ]);
+    $stale = JiraIssue::factory()->for($user)->dismissed()->create([
+        'assignee_account_id' => 'acc-me',
+        'jira_updated_at' => now()->subMonth()->subDay(),
+    ]);
+
+    livewire(ListConcerningTasks::class)
+        ->set('activeTab', 'passed')
+        ->assertCanSeeTableRecords([$recent])
+        ->assertCanNotSeeTableRecords([$stale]);
+});
+
 test('a passed task leaves the passed tab once it is closed', function () {
     $issue = JiraIssue::factory()->for(signedInUser())->dismissed()->create(['assignee_account_id' => 'acc-me']);
 
