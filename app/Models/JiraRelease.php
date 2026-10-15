@@ -82,6 +82,21 @@ class JiraRelease extends Model
     }
 
     /**
+     * The share of the release's tasks in the Done status category (0-100), or
+     * null when it has no tasks. Requires {@see scopeWithIssueProgress()}.
+     */
+    public function issueProgressPercentage(): ?int
+    {
+        $total = (int) $this->issues_count;
+
+        if ($total === 0) {
+            return null;
+        }
+
+        return (int) floor((int) $this->done_issues_count * 100 / $total);
+    }
+
+    /**
      * Eager count the release's tasks, and those in the Done status category.
      *
      * @param  Builder<JiraRelease>  $query
