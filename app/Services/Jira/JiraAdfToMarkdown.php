@@ -45,7 +45,8 @@ class JiraAdfToMarkdown
             'rule' => '---',
             'mention' => self::renderMention($node),
             'emoji' => self::renderEmoji($node),
-            'inlineCard' => (string) data_get($node, 'attrs.url', ''),
+            'inlineCard', 'blockCard', 'embedCard' => self::renderCard($node),
+            'status' => (string) data_get($node, 'attrs.text', ''),
             'table' => self::renderTable($node),
             'mediaSingle', 'mediaGroup' => self::renderMediaContainer($node),
             'media' => self::renderMedia($node),
@@ -246,6 +247,17 @@ class JiraAdfToMarkdown
     private static function renderEmoji(array $node): string
     {
         return (string) (data_get($node, 'attrs.text') ?? data_get($node, 'attrs.shortName', ''));
+    }
+
+    /**
+     * Render a smart link card as its URL, falling back to the URL inside
+     * the card's JSON-LD `data` attribute.
+     *
+     * @param  array<string, mixed>  $node
+     */
+    private static function renderCard(array $node): string
+    {
+        return (string) (data_get($node, 'attrs.url') ?? data_get($node, 'attrs.data.url', ''));
     }
 
     /**

@@ -15,7 +15,8 @@ class JiraIssueContentMapper
      *
      * When a Jira site URL is given, inline attachment URLs in the rendered
      * HTML are rewritten to load through the authenticated local proxy so
-     * embedded images render in the browser.
+     * embedded images render in the browser. Inline issue cards, emoticons
+     * and status lozenges are reformatted to render inline with the text.
      *
      * @param  array<string, mixed>  $payload
      * @return array{
@@ -188,10 +189,7 @@ class JiraIssueContentMapper
                 continue;
             }
 
-            $body = JiraAttachmentProxy::rewriteHtml(
-                (string) data_get($rendered[$index] ?? [], 'body', ''),
-                $jiraSiteUrl,
-            );
+            $body = self::html((string) data_get($rendered[$index] ?? [], 'body', ''), $jiraSiteUrl);
 
             $comments[] = [
                 'author' => (string) data_get($comment, 'author.displayName', 'Unknown'),
@@ -230,7 +228,16 @@ class JiraIssueContentMapper
             return null;
         }
 
-        return JiraAttachmentProxy::rewriteHtml($value, $jiraSiteUrl);
+        return self::html($value, $jiraSiteUrl);
+    }
+
+    /**
+     * Prepare Jira's rendered HTML for display: proxy inline attachments and
+     * make inline macros (issue cards, emoticons, lozenges) flow with the text.
+     */
+    private static function html(string $html, ?string $jiraSiteUrl): string
+    {
+        return JiraInlineMacroFormatter::format(JiraAttachmentProxy::rewriteHtml($html, $jiraSiteUrl));
     }
 
     /**

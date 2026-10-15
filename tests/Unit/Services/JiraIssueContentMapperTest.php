@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Jira\JiraInlineMacroFormatter;
 use App\Services\Jira\JiraIssueContentMapper;
 use Carbon\CarbonInterface;
 
@@ -177,6 +178,23 @@ test('map zips raw comment metadata with rendered bodies, newest first', functio
         ->and($result['comments'][0]['created'])->toBeInstanceOf(CarbonInterface::class)
         ->and($result['comments'][1]['author'])->toBe('Alice')
         ->and($result['comments'][1]['body'])->toBe('<p>First</p>');
+});
+
+test('map renders inline issue macros in descriptions and comments inline', function () {
+    $macro = "in \n    <span class=\"jira-issue-macro\" data-jira-key=\"PROJ-1\" >\n        <a href=\"https://example.atlassian.net/browse/PROJ-1\" class=\"jira-issue-macro-key issue-link\">\n            <img class=\"icon\" src=\"https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/1\" />\n            PROJ-1\n        </a>\n        <span class=\"aui-lozenge\">New</span>\n    </span>\n.";
+
+    $result = JiraIssueContentMapper::map([
+        'fields' => ['comment' => ['comments' => [['author' => ['displayName' => 'Alice']]]]],
+        'renderedFields' => [
+            'description' => "<p>Described {$macro}</p>",
+            'comment' => ['comments' => [['body' => "<p>Recorded {$macro}</p>"]]],
+        ],
+    ], 'https://example.atlassian.net');
+
+    expect($result['description'])->toBe(JiraInlineMacroFormatter::format("<p>Described {$macro}</p>"))
+        ->toStartWith('<p>Described in <span class="jira-issue-macro"')
+        ->and($result['comments'][0]['body'])->toBe(JiraInlineMacroFormatter::format("<p>Recorded {$macro}</p>"))
+        ->toStartWith('<p>Recorded in <span class="jira-issue-macro"');
 });
 
 test('map falls back gracefully when comment fields are missing', function () {

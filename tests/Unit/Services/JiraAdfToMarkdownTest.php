@@ -183,3 +183,47 @@ test('convert recurses into unknown node types', function () {
 
     expect(JiraAdfToMarkdown::convert($doc))->toBe('surprise');
 });
+
+test('convert keeps mentions, inline cards, emoji, statuses and dates inline with the text', function () {
+    $card = fn (string $key): array => ['type' => 'inlineCard', 'attrs' => ['url' => "https://example.atlassian.net/browse/{$key}"]];
+
+    $doc = adfDoc([
+        adfParagraph([
+            ['type' => 'mention', 'attrs' => ['id' => 'acc-1', 'text' => '@Mantas Pauliukonis']],
+            adfText(' '),
+            ['type' => 'mention', 'attrs' => ['id' => 'acc-2', 'text' => '@Rasa Sataite']],
+            adfText(' the partner answered all seven questions today. Everything is recorded in '),
+            $card('SUPER-4403'),
+            adfText(' and in the affected tickets ('),
+            $card('SUPER-4364'),
+            adfText(', '),
+            ['type' => 'inlineCard', 'attrs' => ['data' => ['url' => 'https://example.atlassian.net/browse/SUPER-4365']]],
+            adfText(') '),
+            ['type' => 'emoji', 'attrs' => ['shortName' => ':white_check_mark:', 'text' => '✅']],
+            adfText(' status '),
+            ['type' => 'status', 'attrs' => ['text' => 'In Progress', 'color' => 'blue']],
+            adfText(' due '),
+            ['type' => 'date', 'attrs' => ['timestamp' => '1791763200000']],
+            adfText('.'),
+        ]),
+        ['type' => 'bulletList', 'content' => [
+            ['type' => 'listItem', 'content' => [adfParagraph([
+                adfText('They will send our numeric game ids, so '),
+                $card('SUPER-4391'),
+                adfText(' is no longer launch-blocking.'),
+            ])]],
+            ['type' => 'listItem', 'content' => [adfParagraph([
+                $card('SUPER-4394'),
+                adfText(' is ours to solve.'),
+            ])]],
+        ]],
+    ]);
+
+    expect(JiraAdfToMarkdown::convert($doc))->toBe(
+        '@Mantas Pauliukonis @Rasa Sataite the partner answered all seven questions today. Everything is recorded in '
+        .'https://example.atlassian.net/browse/SUPER-4403 and in the affected tickets (https://example.atlassian.net/browse/SUPER-4364, '
+        ."https://example.atlassian.net/browse/SUPER-4365) ✅ status In Progress due 2026-10-12.\n\n"
+        ."- They will send our numeric game ids, so https://example.atlassian.net/browse/SUPER-4391 is no longer launch-blocking.\n"
+        .'- https://example.atlassian.net/browse/SUPER-4394 is ours to solve.'
+    );
+});
