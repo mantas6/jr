@@ -362,6 +362,87 @@ test('an issue reassigned to someone else is not stamped and keeps its snooze', 
         ->and($issue->snoozed_until->toDateTimeString())->toBe($snoozedUntil->toDateTimeString());
 });
 
+/**
+ * Fake a sync whose single search result is issue 1001 assigned to the given
+ * account (or nobody).
+ */
+function fakeIssueSyncWithAssignee(?string $accountId): void
+{
+    $payload = jiraIssuePayload('1001', 'PROJ-1', 'Reassigned issue');
+    $payload['fields']['assignee'] = $accountId === null ? null : ['accountId' => $accountId, 'displayName' => 'Someone Else'];
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
+        '*/rest/api/3/search/jql*' => Http::response(['issues' => [$payload], 'isLast' => true]),
+        '*/rest/api/3/issue/*/transitions' => Http::response(['transitions' => []]),
+    ]);
+}
+
+test('an unstarred issue reassigned away from me is dismissed into the passed list', function (?string $newAssignee) {
+    freezeTime();
+
+    $user = syncUser(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->concerning()->create([
+        'jira_id' => '1001',
+        'jira_key' => 'PROJ-1',
+        'assignee_account_id' => 'acc-me',
+    ]);
+
+    fakeIssueSyncWithAssignee($newAssignee);
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    $issue->refresh();
+
+    expect($issue->assignee_account_id)->toBe($newAssignee)
+        ->and($issue->dismissed_at->toDateTimeString())->toBe(now()->toDateTimeString())
+        ->and($issue->is_important)->toBeFalse()
+        ->and($issue->concerning_since)->toBeNull()
+        ->and(JiraIssue::query()->passed($user)->pluck('id')->all())->toBe([$issue->id]);
+})->with([
+    'to someone else' => ['acc-other'],
+    'to nobody' => [null],
+]);
+
+test('a starred issue reassigned away from me is left alone', function () {
+    $user = syncUser(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->important()->create([
+        'jira_id' => '1001',
+        'jira_key' => 'PROJ-1',
+        'assignee_account_id' => 'acc-me',
+    ]);
+
+    fakeIssueSyncWithAssignee('acc-other');
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    $issue->refresh();
+
+    expect($issue->assignee_account_id)->toBe('acc-other')
+        ->and($issue->dismissed_at)->toBeNull()
+        ->and($issue->is_important)->toBeTrue()
+        ->and($issue->concerning_since)->not->toBeNull();
+});
+
+test('an issue that stays assigned to someone else is not dismissed', function () {
+    $user = syncUser(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->concerning()->create([
+        'jira_id' => '1001',
+        'jira_key' => 'PROJ-1',
+        'assignee_account_id' => 'acc-someone',
+    ]);
+
+    fakeIssueSyncWithAssignee('acc-other');
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    expect($issue->fresh()->dismissed_at)->toBeNull()
+        ->and($issue->fresh()->concerning_since)->not->toBeNull();
+});
+
 test('a successful sync stamps the synced time and clears any previous error', function () {
     $user = syncUser(['jira_last_sync_error' => 'previous failure']);
 

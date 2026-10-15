@@ -144,6 +144,7 @@ final class JiraIssueActions
      *
      * When the refresh newly assigns the issue to the user, `assigned_to_me_at`
      * is stamped (re-surfacing a dismissed task) and any active snooze is cleared.
+     * When it takes the issue away from the user, an unstarred task is dismissed.
      *
      * Sprint and pull request columns are left untouched when their custom
      * field id cannot be resolved, so a failed field lookup never wipes them.
@@ -171,6 +172,8 @@ final class JiraIssueActions
             if ($issue->isSnoozed()) {
                 $attributes['snoozed_until'] = null;
             }
+        } elseif (!$issue->is_important && JiraIssue::becameUnassignedFromMe($issue->assignee_account_id, $attributes['assignee_account_id'], $this->user)) {
+            $attributes = [...$attributes, ...JiraIssue::dismissalAttributes(Carbon::now())];
         }
 
         $issue->update($attributes);

@@ -166,3 +166,16 @@ test('a task assigned to someone else with no mention is not concerning', functi
 
     expect(concerningIds($user))->not->toContain($issue->id);
 });
+
+test('becameUnassignedFromMe only matches an assignee change away from my account', function (?string $previous, ?string $incoming, ?string $accountId, bool $expected) {
+    $user = User::factory()->make(['jira_account_id' => $accountId]);
+
+    expect(JiraIssue::becameUnassignedFromMe($previous, $incoming, $user))->toBe($expected);
+})->with([
+    'me to someone else' => ['acc-me', 'acc-other', 'acc-me', true],
+    'me to nobody' => ['acc-me', null, 'acc-me', true],
+    'still me' => ['acc-me', 'acc-me', 'acc-me', false],
+    'someone else to me' => ['acc-other', 'acc-me', 'acc-me', false],
+    'between others' => ['acc-other', null, 'acc-me', false],
+    'no jira account id' => [null, 'acc-other', null, false],
+]);

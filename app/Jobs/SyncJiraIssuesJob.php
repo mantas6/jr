@@ -219,9 +219,11 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * Upsert a chunk of mapped rows, then stamp `assigned_to_me_at` on existing
-     * rows that were newly assigned to the user and clear any active snooze on
-     * them. New rows need no stamp since they have never been dismissed.
+     * Upsert a chunk of mapped rows, then reconcile assignee changes on existing
+     * rows: those newly assigned to the user get `assigned_to_me_at` stamped and
+     * any active snooze cleared, and unstarred ones reassigned away from the
+     * user are dismissed. New rows need neither since they have never been
+     * dismissed.
      *
      * @param  list<array<string, string|int|null>>  $chunk
      */
@@ -233,13 +235,14 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         $existing = JiraIssue::query()
             ->where('user_id', $this->user->id)
             ->whereIn('jira_id', $jiraIds)
-            ->get(['jira_id', 'assignee_account_id', 'snoozed_until'])
+            ->get(['jira_id', 'assignee_account_id', 'snoozed_until', 'is_important'])
             ->keyBy('jira_id');
 
         JiraIssue::upsert($chunk, ['user_id', 'jira_id'], self::UPSERT_COLUMNS);
 
         $assignedIds = [];
         $unsnoozeIds = [];
+        $dismissIds = [];
 
         foreach ($chunk as $row) {
             $current = $existing->get((string) $row['jira_id']);
@@ -249,6 +252,14 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
             }
 
             $incomingAssignee = $row['assignee_account_id'] === null ? null : (string) $row['assignee_account_id'];
+
+            if (JiraIssue::becameUnassignedFromMe($current->assignee_account_id, $incomingAssignee, $this->user)) {
+                if (!$current->is_important) {
+                    $dismissIds[] = $row['jira_id'];
+                }
+
+                continue;
+            }
 
             if (!JiraIssue::becameAssignedToMe($current->assignee_account_id, $incomingAssignee, $this->user)) {
                 continue;
@@ -273,6 +284,13 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
                 ->where('user_id', $this->user->id)
                 ->whereIn('jira_id', $unsnoozeIds)
                 ->update(['snoozed_until' => null]);
+        }
+
+        if ($dismissIds !== []) {
+            JiraIssue::query()
+                ->where('user_id', $this->user->id)
+                ->whereIn('jira_id', $dismissIds)
+                ->update(JiraIssue::dismissalAttributes($now));
         }
     }
 

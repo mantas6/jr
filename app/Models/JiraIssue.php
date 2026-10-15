@@ -107,6 +107,37 @@ class JiraIssue extends Model
     }
 
     /**
+     * Determine whether an assignee change takes the issue away from the user:
+     * the previous assignee was the user's Jira account and the incoming one is
+     * someone else (or nobody). Always false when the user has no Jira account id.
+     */
+    public static function becameUnassignedFromMe(?string $previousAssignee, ?string $incomingAssignee, User $user): bool
+    {
+        $accountId = $user->jira_account_id;
+
+        if (blank($accountId)) {
+            return false;
+        }
+
+        return $previousAssignee === $accountId && $incomingAssignee !== $accountId;
+    }
+
+    /**
+     * The attributes that dismiss an issue at the given time: it is stamped as
+     * dismissed, unstarred and unpinned from the concerning list.
+     *
+     * @return array{dismissed_at: Carbon, is_important: false, concerning_since: null}
+     */
+    public static function dismissalAttributes(Carbon $at): array
+    {
+        return [
+            'dismissed_at' => $at,
+            'is_important' => false,
+            'concerning_since' => null,
+        ];
+    }
+
+    /**
      * Determine whether the issue is currently snoozed: it has a snooze time set
      * and that time is still in the future. An expired snooze counts as not
      * snoozed.

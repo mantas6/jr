@@ -285,6 +285,37 @@ test('assigning an issue to someone else does not stamp it and keeps its snooze'
         ->and($issue->snoozed_until->toDateTimeString())->toBe($snoozedUntil->toDateTimeString());
 });
 
+test('assigning an issue away from me dismisses it unless it is starred', function (bool $starred) {
+    freezeTime();
+
+    $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
+    $issue = JiraIssue::factory()->for($user)->concerning()->create([
+        'jira_key' => 'PROJ-15',
+        'assignee_account_id' => 'acc-me',
+        'is_important' => $starred,
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
+        '*/rest/api/3/issue/PROJ-15/assignee' => Http::response([], 204),
+        '*/rest/api/3/issue/PROJ-15*' => Http::response(issuePayload('PROJ-15', [
+            'assignee' => ['accountId' => 'acc-9', 'displayName' => 'Assignee Nine'],
+        ])),
+    ]);
+
+    JiraIssueActions::forUser($user)->assign($issue, 'acc-9');
+
+    $issue->refresh();
+
+    expect($issue->assignee_account_id)->toBe('acc-9')
+        ->and($issue->dismissed_at?->toDateTimeString())->toBe($starred ? null : now()->toDateTimeString())
+        ->and($issue->is_important)->toBe($starred)
+        ->and($issue->concerning_since === null)->toBe(!$starred);
+})->with([
+    'unstarred' => [false],
+    'starred' => [true],
+]);
+
 test('addConcerning re-surfaces an existing task without contacting jira', function () {
     $user = User::factory()->withJiraConnection()->create();
     $issue = JiraIssue::factory()->for($user)->create([
