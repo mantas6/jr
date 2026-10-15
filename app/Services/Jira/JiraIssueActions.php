@@ -7,6 +7,7 @@ namespace App\Services\Jira;
 use App\Models\JiraIssue;
 use App\Models\JiraRelease;
 use App\Models\User;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
 /**
@@ -78,6 +79,37 @@ final class JiraIssueActions
         $this->client->assignIssue($issue->jira_key, $accountId);
 
         return $this->refresh($issue);
+    }
+
+    /**
+     * Fetch the issue's linked pull requests from Jira and sync its pull
+     * request summary columns (`pr_state`, `pr_count`, `pr_approved`) from
+     * them, saving quietly only when they changed. An empty result leaves the
+     * synced summary untouched.
+     *
+     * @return list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, approved: bool, updated: CarbonInterface|null}>
+     *
+     * @throws JiraApiException When Jira rejects the request.
+     */
+    public function pullRequests(JiraIssue $issue): array
+    {
+        $pullRequests = JiraIssueContentMapper::mapPullRequests($this->client->getPullRequests($issue->jira_id));
+
+        if ($pullRequests === []) {
+            return [];
+        }
+
+        $issue->fill([
+            'pr_state' => JiraPullRequestState::fromStatuses(array_column($pullRequests, 'status')),
+            'pr_count' => count($pullRequests),
+            'pr_approved' => JiraPullRequestState::hasApproval($pullRequests),
+        ]);
+
+        if ($issue->isDirty(['pr_state', 'pr_count', 'pr_approved'])) {
+            $issue->saveQuietly();
+        }
+
+        return $pullRequests;
     }
 
     /**

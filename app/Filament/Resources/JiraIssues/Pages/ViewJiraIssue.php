@@ -8,8 +8,8 @@ use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
+use App\Services\Jira\JiraIssueActions;
 use App\Services\Jira\JiraIssueContentMapper;
-use App\Services\Jira\JiraPullRequestState;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -101,24 +101,7 @@ class ViewJiraIssue extends ViewRecord
         }
 
         try {
-            $this->pullRequestDetails = JiraIssueContentMapper::mapPullRequests(
-                JiraClient::forUser($this->currentUser())->getPullRequests($this->currentRecord()->jira_id),
-            );
-
-            if ($this->pullRequestDetails !== []) {
-                $record = $this->currentRecord();
-                $record->fill([
-                    'pr_state' => JiraPullRequestState::fromStatuses(array_column($this->pullRequestDetails, 'status')),
-                    'pr_count' => count($this->pullRequestDetails),
-                    'pr_approved' => JiraPullRequestState::hasApproval($this->pullRequestDetails),
-                ]);
-
-                if ($record->isDirty(['pr_state', 'pr_count', 'pr_approved'])) {
-                    $record->saveQuietly();
-                }
-            }
-
-            return $this->pullRequestDetails;
+            return $this->pullRequestDetails = JiraIssueActions::forUser($this->currentUser())->pullRequests($this->currentRecord());
         } catch (JiraApiException) {
             return $this->pullRequestDetails = [];
         }

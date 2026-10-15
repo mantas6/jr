@@ -8,6 +8,7 @@ use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\JiraPullRequestState;
 use App\Services\Jira\JiraTransitionsCache;
+use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
@@ -520,6 +521,86 @@ test('the PR column hides declined statuses and their tooltip', function () {
     livewire(ListJiraIssues::class)
         ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getIcon($column->getState()) === null
             && $column->getTooltip() === null, $issue);
+});
+
+test('clicking the PR column opens a modal listing the live pull requests and refreshes the row', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->withPullRequest('MERGED', 1)->create([
+        'jira_key' => 'PROJ-70',
+        'jira_id' => '10001',
+    ]);
+
+    Http::fake([
+        '*/rest/dev-status/1.0/issue/summary*' => Http::response([
+            'summary' => ['pullrequest' => ['byInstanceType' => ['bitbucket' => ['count' => 2]]]],
+        ]),
+        '*/rest/dev-status/1.0/issue/detail*' => Http::response([
+            'detail' => [['pullRequests' => [
+                [
+                    'id' => '17',
+                    'name' => 'Ship it',
+                    'url' => 'https://bitbucket.org/{workspace-uuid}/{repo-uuid}/pull-requests/17',
+                    'status' => 'OPEN',
+                    'repositoryName' => 'example/app',
+                    'author' => ['name' => 'Alice Author'],
+                    'source' => ['branch' => 'feature-branch'],
+                    'destination' => ['branch' => 'main'],
+                    'reviewers' => [['name' => 'Bob Reviewer', 'approved' => true]],
+                ],
+                ['id' => '18', 'name' => 'Earlier change', 'status' => 'MERGED'],
+            ]]],
+        ]),
+    ]);
+
+    $table = TestAction::make('pullRequests')->table($issue);
+
+    livewire(ListJiraIssues::class)
+        ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getAction() instanceof Action
+            && $column->getAction()->getName() === 'pullRequests'
+            && !$column->isClickDisabled(), $issue)
+        ->mountAction($table)
+        ->assertActionMounted($table)
+        ->assertMountedActionModalSee([
+            'PROJ-70 pull requests',
+            '2 pull requests, open, approved',
+            '#17 Ship it',
+            'feature-branch → main',
+            'Bob Reviewer (approved)',
+            '#18 Earlier change',
+        ])
+        ->assertMountedActionModalSeeHtml('href="https://bitbucket.org/example/app/pull-requests/17"');
+
+    assertDatabaseHas('jira_issues', ['id' => $issue->id, 'pr_state' => 'OPEN', 'pr_count' => 2, 'pr_approved' => true]);
+    Http::assertSentCount(2);
+});
+
+test('the PR modal keeps the synced summary when Jira cannot be reached', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->withPullRequest('OPEN', 2)->create(['jira_key' => 'PROJ-70']);
+
+    Http::fake(['*/rest/dev-status/1.0/issue/summary*' => Http::response([], 403)]);
+
+    livewire(ListJiraIssues::class)
+        ->mountAction(TestAction::make('pullRequests')->table($issue))
+        ->assertMountedActionModalSee(['2 pull requests, open', 'Pull request details unavailable']);
+
+    assertDatabaseHas('jira_issues', ['id' => $issue->id, 'pr_state' => 'OPEN', 'pr_count' => 2]);
+});
+
+test('the PR modal is unavailable for a task without pull requests', function () {
+    Http::fake();
+
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->create();
+
+    livewire(ListJiraIssues::class)
+        ->assertActionHidden(TestAction::make('pullRequests')->table($issue))
+        ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->isClickDisabled(), $issue);
+
+    Http::assertNothingSent();
 });
 
 test('the current-sprint filter shows only active-sprint tasks on the full list', function () {

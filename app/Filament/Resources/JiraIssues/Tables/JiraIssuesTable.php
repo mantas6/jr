@@ -4,6 +4,7 @@ namespace App\Filament\Resources\JiraIssues\Tables;
 
 use App\Filament\Resources\JiraIssues\JiraIssueResource;
 use App\Filament\Resources\JiraIssues\Pages\ListConcerningTasks;
+use App\Filament\Resources\JiraIssues\Schemas\JiraIssueInfolist;
 use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\ConcerningTasksExporter;
@@ -22,6 +23,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Support\Enums\FontWeight;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -82,6 +84,8 @@ class JiraIssuesTable
                         default => $record->pr_state?->color(),
                     })
                     ->tooltip(fn (JiraIssue $record): ?string => $record->pr_state?->describe($record->pr_count, $record->pr_approved))
+                    ->action(self::pullRequestsAction())
+                    ->disabledClick(fn (JiraIssue $record): bool => !self::hasPullRequests($record))
                     ->alignCenter()
                     ->width('1%')
                     ->toggleable(),
@@ -257,6 +261,64 @@ class JiraIssuesTable
 
                 Notification::make()->success()->title('Task updated')->send();
             });
+    }
+
+    /**
+     * Modal listing the task's linked pull requests (status, approvals,
+     * reviewers and links), opened by clicking the PR column. The pull
+     * requests are fetched live from Jira when the modal opens (once per
+     * render, memoized per record), which also refreshes the task's synced
+     * pull request summary.
+     */
+    private static function pullRequestsAction(): Action
+    {
+        $fetched = [];
+
+        $pullRequests = function (JiraIssue $record) use (&$fetched): array {
+            return $fetched[$record->getKey()] ??= self::fetchPullRequests($record);
+        };
+
+        return Action::make('pullRequests')
+            ->modalHeading(fn (JiraIssue $record): string => $record->jira_key.' pull requests')
+            ->modalWidth(Width::SevenExtraLarge)
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Close')
+            ->visible(fn (JiraIssue $record): bool => self::hasPullRequests($record))
+            ->schema([
+                JiraIssueInfolist::pullRequestSummaryEntry(function (JiraIssue $record) use ($pullRequests): ?string {
+                    $pullRequests($record);
+
+                    return $record->pr_state?->describe($record->pr_count, $record->pr_approved);
+                }),
+                JiraIssueInfolist::pullRequestsEntry($pullRequests),
+            ]);
+    }
+
+    /**
+     * Whether the task has linked pull requests to show in the PR modal.
+     */
+    private static function hasPullRequests(JiraIssue $record): bool
+    {
+        return (int) $record->pr_count > 0;
+    }
+
+    /**
+     * Fetch the task's pull requests from Jira, resolving to an empty list
+     * when the user has no Jira connection or the lookup fails.
+     *
+     * @return list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, approved: bool, updated: CarbonInterface|null}>
+     */
+    private static function fetchPullRequests(JiraIssue $record): array
+    {
+        if (!self::user()->hasJiraConnection()) {
+            return [];
+        }
+
+        try {
+            return JiraIssueActions::forUser(self::user())->pullRequests($record);
+        } catch (JiraApiException) {
+            return [];
+        }
     }
 
     /**

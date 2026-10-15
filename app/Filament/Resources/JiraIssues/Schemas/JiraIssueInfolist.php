@@ -8,10 +8,12 @@ use App\Models\JiraIssue;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
+use App\Services\Jira\JiraIssueContentMapper;
 use App\Services\Jira\JiraPriority;
 use App\Services\Jira\JiraPullRequestState;
 use App\Services\Jira\JiraStatus;
 use App\Services\Jira\JiraTextToAdf;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -145,48 +147,10 @@ class JiraIssueInfolist
                                     ->collapsible()
                                     ->visible(fn (JiraIssue $record): bool => (int) $record->pr_count > 0)
                                     ->afterHeader([
-                                        TextEntry::make('pull_request_summary')
-                                            ->hiddenLabel()
-                                            ->state(fn (ViewJiraIssue $livewire): ?string => $livewire->pullRequestSummary())
-                                            ->badge()
-                                            ->color(fn (JiraIssue $record): string => $record->pr_state?->color() ?? 'gray'),
+                                        self::pullRequestSummaryEntry(fn (ViewJiraIssue $livewire): ?string => $livewire->pullRequestSummary()),
                                     ])
                                     ->schema([
-                                        RepeatableEntry::make('pull_requests')
-                                            ->hiddenLabel()
-                                            ->state(fn (ViewJiraIssue $livewire): array => $livewire->pullRequests())
-                                            ->placeholder('Pull request details unavailable')
-                                            ->table([
-                                                TableColumn::make('Pull request'),
-                                                TableColumn::make('Status'),
-                                                TableColumn::make('Repository'),
-                                                TableColumn::make('Branches'),
-                                                TableColumn::make('Author'),
-                                                TableColumn::make('Reviewers'),
-                                                TableColumn::make('Updated'),
-                                            ])
-                                            ->schema([
-                                                TextEntry::make('title')
-                                                    ->url(fn (Get $get): ?string => $get('url'), shouldOpenInNewTab: true)
-                                                    ->color('primary'),
-                                                TextEntry::make('status')
-                                                    ->badge()
-                                                    ->color(fn (?string $state): string => JiraPullRequestState::tryFrom((string) $state)?->color() ?? 'gray'),
-                                                TextEntry::make('repository')
-                                                    ->placeholder('—'),
-                                                TextEntry::make('source')
-                                                    ->formatStateUsing(fn (?string $state, Get $get): string => $state.' → '.$get('destination')),
-                                                TextEntry::make('author')
-                                                    ->placeholder('—'),
-                                                TextEntry::make('reviewers')
-                                                    ->listWithLineBreaks()
-                                                    ->placeholder('—'),
-                                                TextEntry::make('updated')
-                                                    ->dateTime()
-                                                    ->placeholder('—'),
-                                                TextEntry::make('url')->hidden(),
-                                                TextEntry::make('destination')->hidden(),
-                                            ])
+                                        self::pullRequestsEntry(fn (ViewJiraIssue $livewire): array => $livewire->pullRequests())
                                             ->columnSpanFull(),
                                     ]),
                                 Section::make('Comments')
@@ -240,6 +204,70 @@ class JiraIssueInfolist
                             ])
                             ->deferLoading(),
                     ),
+            ]);
+    }
+
+    /**
+     * The pull request summary badge (e.g. `2 pull requests, open, approved`),
+     * shared by the task view's "Pull requests" section header and the task
+     * list's pull request modal.
+     *
+     * @param  Closure  $summary  Resolves the summary text; its parameters are injected by Filament.
+     */
+    public static function pullRequestSummaryEntry(Closure $summary): TextEntry
+    {
+        return TextEntry::make('pull_request_summary')
+            ->hiddenLabel()
+            ->state($summary)
+            ->badge()
+            ->color(fn (JiraIssue $record): string => $record->pr_state?->color() ?? 'gray');
+    }
+
+    /**
+     * The table of linked pull requests with their status, branches, reviewers
+     * (and approvals) and links, shared by the task view's "Pull requests"
+     * section and the task list's pull request modal.
+     *
+     * @param  Closure  $pullRequests  Resolves the mapped pull requests (see
+     *                                 {@see JiraIssueContentMapper::mapPullRequests()});
+     *                                 its parameters are injected by Filament.
+     */
+    public static function pullRequestsEntry(Closure $pullRequests): RepeatableEntry
+    {
+        return RepeatableEntry::make('pull_requests')
+            ->hiddenLabel()
+            ->state($pullRequests)
+            ->placeholder('Pull request details unavailable')
+            ->table([
+                TableColumn::make('Pull request'),
+                TableColumn::make('Status'),
+                TableColumn::make('Repository'),
+                TableColumn::make('Branches'),
+                TableColumn::make('Author'),
+                TableColumn::make('Reviewers'),
+                TableColumn::make('Updated'),
+            ])
+            ->schema([
+                TextEntry::make('title')
+                    ->url(fn (Get $get): ?string => $get('url'), shouldOpenInNewTab: true)
+                    ->color('primary'),
+                TextEntry::make('status')
+                    ->badge()
+                    ->color(fn (?string $state): string => JiraPullRequestState::tryFrom((string) $state)?->color() ?? 'gray'),
+                TextEntry::make('repository')
+                    ->placeholder('—'),
+                TextEntry::make('source')
+                    ->formatStateUsing(fn (?string $state, Get $get): string => $state.' → '.$get('destination')),
+                TextEntry::make('author')
+                    ->placeholder('—'),
+                TextEntry::make('reviewers')
+                    ->listWithLineBreaks()
+                    ->placeholder('—'),
+                TextEntry::make('updated')
+                    ->dateTime()
+                    ->placeholder('—'),
+                TextEntry::make('url')->hidden(),
+                TextEntry::make('destination')->hidden(),
             ]);
     }
 
