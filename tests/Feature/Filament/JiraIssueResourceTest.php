@@ -12,6 +12,7 @@ use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\TextColumn;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Livewire\Features\SupportTesting\Testable;
@@ -355,6 +356,19 @@ test('the status line prompts to connect when jira is not connected', function (
     livewire(ListJiraIssues::class)
         ->assertSee('Jira not connected')
         ->assertSee('Connect');
+});
+
+test('clicking the key column opens the task in Jira in a new tab instead of copying it', function () {
+    Http::fake();
+
+    $user = User::factory()->create();
+    actingAs($user);
+    $issue = JiraIssue::factory()->for($user)->create(['jira_url' => 'https://example.atlassian.net/browse/PROJ-7']);
+
+    livewire(ListJiraIssues::class)
+        ->assertTableColumnExists('jira_key', fn (TextColumn $column): bool => $column->getUrl() === 'https://example.atlassian.net/browse/PROJ-7'
+            && $column->shouldOpenUrlInNewTab()
+            && !$column->isCopyable($column->getState()), $issue);
 });
 
 test('bracketed text in the summary is rendered in bold', function () {

@@ -127,7 +127,7 @@ test('the Jira updated column marks unread tasks with a red asterisk', function 
         : $page->assertDontSeeHtml(UNREAD_MARKER);
 
     $page->assertDontSeeHtml(e($issue->jira_key).' '.UNREAD_MARKER)
-        ->assertSeeHtml("writeText('{$issue->jira_key}')");
+        ->assertSeeHtml('href="'.e($issue->jira_url).'"');
 })->with([
     'never viewed' => [
         fn (User $user): JiraIssue => JiraIssue::factory()->for($user)->important()->create([

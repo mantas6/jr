@@ -48,9 +48,6 @@ class JiraIssuesTable
                     ->label('Key')
                     ->url(fn (JiraIssue $record): string => $record->jira_url, shouldOpenInNewTab: true)
                     ->color('primary')
-                    ->copyable()
-                    ->copyableState(fn (JiraIssue $record): string => $record->jira_key)
-                    ->copyMessage('Key copied')
                     ->sortable()
                     ->searchable(),
                 TextColumn::make('summary')
