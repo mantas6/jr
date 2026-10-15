@@ -27,8 +27,9 @@ class ListConcerningTasks extends ListRecords
 
     /**
      * Split the concerning list into active, unread (active and not viewed
-     * since Jira's last update), snoozed and closed tasks, each with a count
-     * badge. Closed tasks only appear under "Closed", whatever their snooze.
+     * since Jira's last update), snoozed, passed (dismissed but still open) and
+     * closed tasks, each with a count badge. Closed tasks only appear under
+     * "Closed", whatever their snooze.
      *
      * @return array<string, Tab>
      */
@@ -37,6 +38,7 @@ class ListConcerningTasks extends ListRecords
         $activeQuery = $this->activeTabQuery(...);
         $unreadQuery = $this->unreadTabQuery(...);
         $snoozedQuery = $this->snoozedTabQuery(...);
+        $passedQuery = $this->passedTabQuery(...);
         $closedQuery = $this->closedTabQuery(...);
 
         $unreadCount = $this->tabCount($unreadQuery);
@@ -52,6 +54,9 @@ class ListConcerningTasks extends ListRecords
             'snoozed' => Tab::make('Snoozed')
                 ->modifyQueryUsing($snoozedQuery)
                 ->badge($this->tabCount($snoozedQuery)),
+            'passed' => Tab::make('Passed')
+                ->modifyQueryUsing($passedQuery)
+                ->badge($this->tabCount($passedQuery)),
             'closed' => Tab::make('Closed')
                 ->modifyQueryUsing($closedQuery)
                 ->badge($this->tabCount($closedQuery)),
@@ -61,6 +66,14 @@ class ListConcerningTasks extends ListRecords
     public function getDefaultActiveTab(): string
     {
         return 'active';
+    }
+
+    /**
+     * Whether the "Passed" tab is selected, where tasks are already dismissed.
+     */
+    public function isOnPassedTab(): bool
+    {
+        return $this->activeTab === 'passed';
     }
 
     /**
@@ -74,7 +87,8 @@ class ListConcerningTasks extends ListRecords
     }
 
     /**
-     * Restrict the table to tasks that currently need the user's attention.
+     * Restrict the table to tasks that need the user's attention or have passed
+     * (dismissed while still open).
      *
      * The base query stays snooze- and status-agnostic; the tabs narrow it
      * further.
@@ -83,7 +97,7 @@ class ListConcerningTasks extends ListRecords
      */
     protected function getTableQuery(): Builder
     {
-        return JiraIssueResource::getEloquentQuery()->concerning($this->currentUser());
+        return JiraIssueResource::getEloquentQuery()->concerningOrPassed($this->currentUser());
     }
 
     /**
@@ -106,7 +120,7 @@ class ListConcerningTasks extends ListRecords
      */
     private function activeTabQuery(Builder $query): Builder
     {
-        return $query->open()->notSnoozed();
+        return $query->concerning($this->currentUser())->open()->notSnoozed();
     }
 
     /**
@@ -117,7 +131,7 @@ class ListConcerningTasks extends ListRecords
      */
     private function unreadTabQuery(Builder $query): Builder
     {
-        return $query->open()->notSnoozed()->unread();
+        return $query->concerning($this->currentUser())->open()->notSnoozed()->unread();
     }
 
     /**
@@ -128,7 +142,18 @@ class ListConcerningTasks extends ListRecords
      */
     private function snoozedTabQuery(Builder $query): Builder
     {
-        return $query->open()->snoozed();
+        return $query->concerning($this->currentUser())->open()->snoozed();
+    }
+
+    /**
+     * Dismissed tasks that are still open and not concerning again.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    private function passedTabQuery(Builder $query): Builder
+    {
+        return $query->passed($this->currentUser());
     }
 
     /**
@@ -139,7 +164,7 @@ class ListConcerningTasks extends ListRecords
      */
     private function closedTabQuery(Builder $query): Builder
     {
-        return $query->closed();
+        return $query->concerning($this->currentUser())->closed();
     }
 
     /**

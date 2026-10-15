@@ -132,6 +132,19 @@ test('the open and closed scopes split tasks by the Done status category, ignori
         ->and(JiraIssue::query()->closed()->pluck('id')->sort()->values()->all())->toBe([$done->id, $lowercaseDone->id]);
 });
 
+test('the passed scope keeps dismissed open tasks with null assignee and trigger columns', function () {
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->dismissed()->create([
+        'assignee_account_id' => null,
+        'mentions_me' => false,
+        'assigned_to_me_at' => null,
+        'last_mentioned_at' => null,
+    ]);
+
+    expect(JiraIssue::query()->passed($user)->pluck('id')->all())->toBe([$issue->id]);
+});
+
 test('another users concerning tasks are excluded', function () {
     $user = User::factory()->create(['jira_account_id' => 'acc-me']);
 

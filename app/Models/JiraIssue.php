@@ -192,6 +192,39 @@ class JiraIssue extends Model
     }
 
     /**
+     * Scope the query to issues the user dismissed that are still open and not
+     * concerning again (a re-surfaced task stays concerning). Being dismissed
+     * proves the task was once on the concerning list.
+     *
+     * Excludes {@see scopeConcerning()} through a subquery rather than negating
+     * its conditions, so null columns cannot drop a row from both lists.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    public function scopePassed(Builder $query, User $user): Builder
+    {
+        return $query->whereNotNull('dismissed_at')
+            ->open()
+            ->whereNotIn('id', self::query()->select('id')->where('user_id', $user->id)->concerning($user));
+    }
+
+    /**
+     * Scope the query to every issue shown on the concerning page: those that
+     * are concerning (any status or snooze) plus those that have passed.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    public function scopeConcerningOrPassed(Builder $query, User $user): Builder
+    {
+        return $query->where(function (Builder $query) use ($user): void {
+            $this->scopeConcerning($query, $user)
+                ->orWhere(fn (Builder $query): Builder => $this->scopePassed($query, $user));
+        });
+    }
+
+    /**
      * Scope the query to open issues: anything outside Jira's "Done" status
      * category (compared case-insensitively).
      *

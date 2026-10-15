@@ -5,6 +5,7 @@ use App\Filament\Resources\JiraIssues\Pages\ListConcerningTasks;
 use App\Filament\Resources\JiraIssues\Pages\ListJiraIssues;
 use App\Models\JiraIssue;
 use App\Models\User;
+use App\Services\Jira\JiraTransitionsCache;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Illuminate\Http\Client\Factory;
@@ -176,6 +177,7 @@ test('each tab badge counts the current user\'s concerning tasks in that tab', f
     JiraIssue::factory()->for($user)->important()->snoozed(now()->addHour())->create();
     JiraIssue::factory()->for($user)->important()->done()->create();
     JiraIssue::factory()->for($user)->important()->done()->snoozed(now()->addHour())->create();
+    JiraIssue::factory()->for($user)->dismissed()->create(['assignee_account_id' => 'acc-me']);
     JiraIssue::factory()->for($user)->create([
         'assignee_account_id' => 'acc-someone',
         'mentions_me' => false,
@@ -184,11 +186,12 @@ test('each tab badge counts the current user\'s concerning tasks in that tab', f
 
     $tabs = livewire(ListConcerningTasks::class)->instance()->getCachedTabs();
 
-    expect(array_keys($tabs))->toBe(['active', 'unread', 'snoozed', 'closed'])
+    expect(array_keys($tabs))->toBe(['active', 'unread', 'snoozed', 'passed', 'closed'])
         ->and($tabs['active']->getBadge())->toBe('2')
         ->and($tabs['unread']->getBadge())->toBe('1')
         ->and($tabs['unread']->getBadgeColor())->toBe('danger')
         ->and($tabs['snoozed']->getBadge())->toBe('1')
+        ->and($tabs['passed']->getBadge())->toBe('1')
         ->and($tabs['closed']->getBadge())->toBe('2');
 });
 
@@ -230,6 +233,95 @@ test('the closed tab shows every concerning closed task, snoozed or not', functi
         ->set('activeTab', 'closed')
         ->assertCanSeeTableRecords([$done, $doneSnoozed])
         ->assertCanNotSeeTableRecords([$open, $doneNotConcerning]);
+});
+
+test('the passed tab shows dismissed tasks that are still open and not concerning again', function () {
+    $user = signedInUser();
+
+    $dismissedAssigned = JiraIssue::factory()->for($user)->dismissed()->create(['assignee_account_id' => 'acc-me']);
+    $dismissedUnassigned = JiraIssue::factory()->for($user)->dismissed()->create([
+        'assignee_account_id' => null,
+        'mentions_me' => false,
+    ]);
+    $dismissedSnoozed = JiraIssue::factory()->for($user)->dismissed()->snoozed()->create(['assignee_account_id' => 'acc-me']);
+    $resurfaced = JiraIssue::factory()->for($user)->dismissed(now()->subDay())->assignedToMeAt(now())->create(['assignee_account_id' => 'acc-me']);
+    $dismissedClosed = JiraIssue::factory()->for($user)->dismissed()->done()->create(['assignee_account_id' => 'acc-me']);
+    $neverDismissed = JiraIssue::factory()->for($user)->important()->create();
+
+    livewire(ListConcerningTasks::class)
+        ->set('activeTab', 'passed')
+        ->assertCanSeeTableRecords([$dismissedAssigned, $dismissedUnassigned, $dismissedSnoozed])
+        ->assertCanNotSeeTableRecords([$resurfaced, $dismissedClosed, $neverDismissed]);
+});
+
+test('a passed task leaves the passed tab once it is closed', function () {
+    $issue = JiraIssue::factory()->for(signedInUser())->dismissed()->create(['assignee_account_id' => 'acc-me']);
+
+    livewire(ListConcerningTasks::class)
+        ->set('activeTab', 'passed')
+        ->assertCanSeeTableRecords([$issue]);
+
+    $issue->update(['status' => 'Done', 'status_category' => 'Done']);
+
+    livewire(ListConcerningTasks::class)
+        ->set('activeTab', 'passed')
+        ->assertCanNotSeeTableRecords([$issue->fresh()]);
+});
+
+test('dismissing an active task moves it to the passed tab', function () {
+    $issue = JiraIssue::factory()->for(signedInUser())->important()->create(['assignee_account_id' => 'acc-me']);
+
+    livewire(ListConcerningTasks::class)
+        ->callTableAction('dismiss', $issue)
+        ->assertCanNotSeeTableRecords([$issue->fresh()])
+        ->set('activeTab', 'passed')
+        ->assertCanSeeTableRecords([$issue->fresh()]);
+});
+
+test('starring a passed task puts it back on the active tab', function () {
+    $issue = JiraIssue::factory()->for(signedInUser())->dismissed()->create(['assignee_account_id' => 'acc-me']);
+
+    livewire(ListConcerningTasks::class)
+        ->set('activeTab', 'passed')
+        ->assertTableActionVisible('toggleImportant', $issue)
+        ->callTableAction('toggleImportant', $issue)
+        ->assertCanNotSeeTableRecords([$issue->fresh()])
+        ->set('activeTab', 'active')
+        ->assertCanSeeTableRecords([$issue->fresh()]);
+
+    expect($issue->fresh()->is_important)->toBeTrue();
+});
+
+test('the dismiss and snooze actions are hidden on the passed tab', function () {
+    $issue = JiraIssue::factory()->for(signedInUser())->dismissed()->create(['assignee_account_id' => 'acc-me']);
+
+    livewire(ListConcerningTasks::class)
+        ->set('activeTab', 'passed')
+        ->assertTableActionHidden('dismiss', $issue)
+        ->assertTableActionHidden('snooze', $issue)
+        ->assertTableBulkActionHidden('bulkDismiss')
+        ->assertTableBulkActionHidden('bulkSnooze')
+        ->assertTableBulkActionVisible('bulkStar');
+});
+
+test('the update modal hides its dismiss toggle on the passed tab only', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
+    actingAs($user);
+
+    $passed = JiraIssue::factory()->for($user)->dismissed()->create(['assignee_account_id' => 'acc-me']);
+    $active = JiraIssue::factory()->for($user)->important()->create();
+
+    JiraTransitionsCache::put($user, $passed->issue_type, $passed->status_id, []);
+    JiraTransitionsCache::put($user, $active->issue_type, $active->status_id, []);
+
+    livewire(ListConcerningTasks::class)
+        ->set('activeTab', 'passed')
+        ->mountTableAction('updateStatusAssignee', $passed)
+        ->assertFormFieldHidden('dismiss');
+
+    livewire(ListConcerningTasks::class)
+        ->mountTableAction('updateStatusAssignee', $active)
+        ->assertFormFieldVisible('dismiss');
 });
 
 test('dismissing a closed task removes it from every tab', function () {

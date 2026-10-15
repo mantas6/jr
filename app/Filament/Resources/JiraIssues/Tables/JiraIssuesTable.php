@@ -34,6 +34,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\HtmlString;
+use Livewire\Component;
 
 class JiraIssuesTable
 {
@@ -226,7 +227,8 @@ class JiraIssuesTable
                     ->getOptionLabelUsing(fn (JiraIssue $record, mixed $value): ?string => self::assigneeOptionLabel($record, $value)),
                 Toggle::make('dismiss')
                     ->label('Dismiss this task')
-                    ->default(false),
+                    ->default(false)
+                    ->hidden(fn (Component $livewire): bool => self::isOnPassedTab($livewire)),
             ])
             ->action(function (JiraIssue $record, array $data): void {
                 $actions = JiraIssueActions::forUser(self::user());
@@ -273,6 +275,15 @@ class JiraIssuesTable
             $expression.' '.($direction === 'desc' ? 'desc' : 'asc'),
             $bindings,
         );
+    }
+
+    /**
+     * Whether the given page is the concerning list with its "Passed" tab
+     * selected.
+     */
+    private static function isOnPassedTab(Component $livewire): bool
+    {
+        return $livewire instanceof ListConcerningTasks && $livewire->isOnPassedTab();
     }
 
     /**
@@ -461,8 +472,8 @@ class JiraIssuesTable
     }
 
     /**
-     * Snooze the task for a chosen window. Only on the concerning list, and only
-     * when the task is not already snoozed.
+     * Snooze the task for a chosen window. Only on the concerning list outside
+     * the "Passed" tab, and only when the task is not already snoozed.
      */
     private static function snoozeAction(): Action
     {
@@ -470,7 +481,7 @@ class JiraIssuesTable
             ->icon(Heroicon::OutlinedClock)
             ->color('gray')
             ->iconButton()
-            ->visible(fn (HasTable $livewire, JiraIssue $record): bool => $livewire instanceof ListConcerningTasks && !$record->isSnoozed())
+            ->visible(fn (HasTable $livewire, JiraIssue $record): bool => $livewire instanceof ListConcerningTasks && !$livewire->isOnPassedTab() && !$record->isSnoozed())
             ->schema([
                 Select::make('duration')
                     ->label('Snooze until')
@@ -501,7 +512,8 @@ class JiraIssuesTable
 
     /**
      * Dismiss the task until you are newly assigned or newly mentioned in a
-     * comment. Only on the concerning list.
+     * comment. Only on the concerning list, outside the "Passed" tab where tasks
+     * are already dismissed.
      */
     private static function dismissAction(): Action
     {
@@ -509,7 +521,7 @@ class JiraIssuesTable
             ->icon(Heroicon::OutlinedCheck)
             ->color('gray')
             ->iconButton()
-            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks && !$livewire->isOnPassedTab())
             ->action(fn (JiraIssue $record) => self::dismissRecord($record));
     }
 
@@ -532,7 +544,7 @@ class JiraIssuesTable
 
     /**
      * Bulk snooze the selected tasks for a chosen window. Only on the
-     * concerning list.
+     * concerning list, outside the "Passed" tab.
      */
     private static function bulkSnoozeAction(): BulkAction
     {
@@ -540,7 +552,7 @@ class JiraIssuesTable
             ->label('Snooze')
             ->icon(Heroicon::OutlinedClock)
             ->color('gray')
-            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks && !$livewire->isOnPassedTab())
             ->schema([
                 Select::make('duration')
                     ->label('Snooze until')
@@ -557,7 +569,8 @@ class JiraIssuesTable
     }
 
     /**
-     * Bulk dismiss the selected tasks. Only on the concerning list.
+     * Bulk dismiss the selected tasks. Only on the concerning list, outside the
+     * "Passed" tab where tasks are already dismissed.
      */
     private static function bulkDismissAction(): BulkAction
     {
@@ -565,7 +578,7 @@ class JiraIssuesTable
             ->label('Dismiss')
             ->icon(Heroicon::OutlinedCheck)
             ->color('gray')
-            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+            ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks && !$livewire->isOnPassedTab())
             ->action(fn (Collection $records) => $records->each->update([
                 'dismissed_at' => Carbon::now(),
                 'is_important' => false,
