@@ -174,6 +174,8 @@ test('each tab badge counts the current user\'s concerning tasks in that tab', f
         'jira_updated_at' => now()->subHour(),
     ]);
     JiraIssue::factory()->for($user)->important()->snoozed(now()->addHour())->create();
+    JiraIssue::factory()->for($user)->important()->done()->create();
+    JiraIssue::factory()->for($user)->important()->done()->snoozed(now()->addHour())->create();
     JiraIssue::factory()->for($user)->create([
         'assignee_account_id' => 'acc-someone',
         'mentions_me' => false,
@@ -182,10 +184,12 @@ test('each tab badge counts the current user\'s concerning tasks in that tab', f
 
     $tabs = livewire(ListConcerningTasks::class)->instance()->getCachedTabs();
 
-    expect($tabs['active']->getBadge())->toBe('2')
+    expect(array_keys($tabs))->toBe(['active', 'unread', 'snoozed', 'closed'])
+        ->and($tabs['active']->getBadge())->toBe('2')
         ->and($tabs['unread']->getBadge())->toBe('1')
         ->and($tabs['unread']->getBadgeColor())->toBe('danger')
-        ->and($tabs['snoozed']->getBadge())->toBe('1');
+        ->and($tabs['snoozed']->getBadge())->toBe('1')
+        ->and($tabs['closed']->getBadge())->toBe('2');
 });
 
 test('the unread tab badge keeps the default color when nothing is unread', function () {
@@ -199,21 +203,49 @@ test('the unread tab badge keeps the default color when nothing is unread', func
         ->and($tabs['unread']->getBadgeColor())->toBeNull();
 });
 
-test('the not-closed filter is off by default on the concerning page but can hide Done tasks', function () {
+test('the active, unread and snoozed tabs hide closed tasks', function (string $tab) {
+    $user = signedInUser();
+
+    $done = JiraIssue::factory()->for($user)->important()->done()->create();
+    $doneSnoozed = JiraIssue::factory()->for($user)->important()->done()->snoozed(now()->addHour())->create();
+    $lowercaseDone = JiraIssue::factory()->for($user)->important()->create(['status_category' => 'done']);
+
+    livewire(ListConcerningTasks::class)
+        ->set('activeTab', $tab)
+        ->assertCanNotSeeTableRecords([$done, $doneSnoozed, $lowercaseDone]);
+})->with(['active', 'unread', 'snoozed']);
+
+test('the closed tab shows every concerning closed task, snoozed or not', function () {
     $user = signedInUser();
 
     $open = JiraIssue::factory()->for($user)->important()->create();
     $done = JiraIssue::factory()->for($user)->important()->done()->create();
+    $doneSnoozed = JiraIssue::factory()->for($user)->important()->done()->snoozed(now()->addHour())->create();
+    $doneNotConcerning = JiraIssue::factory()->for($user)->done()->create([
+        'assignee_account_id' => 'acc-someone',
+        'mentions_me' => false,
+    ]);
 
-    // The concerning list surfaces tasks that need attention regardless of status,
-    // so Done tasks stay visible until the filter is applied by hand.
     livewire(ListConcerningTasks::class)
-        ->assertCanSeeTableRecords([$open, $done]);
+        ->set('activeTab', 'closed')
+        ->assertCanSeeTableRecords([$done, $doneSnoozed])
+        ->assertCanNotSeeTableRecords([$open, $doneNotConcerning]);
+});
 
-    livewire(ListConcerningTasks::class)
-        ->filterTable('open', true)
-        ->assertCanSeeTableRecords([$open])
-        ->assertCanNotSeeTableRecords([$done]);
+test('dismissing a closed task removes it from every tab', function () {
+    $issue = JiraIssue::factory()->for(signedInUser())->important()->done()->create([
+        'assignee_account_id' => 'acc-me',
+    ]);
+
+    $page = livewire(ListConcerningTasks::class)
+        ->set('activeTab', 'closed')
+        ->callTableAction('dismiss', $issue);
+
+    foreach (array_keys($page->instance()->getTabs()) as $tab) {
+        livewire(ListConcerningTasks::class)
+            ->set('activeTab', $tab)
+            ->assertCanNotSeeTableRecords([$issue->fresh()]);
+    }
 });
 
 test('the current-sprint filter shows only active-sprint tasks on the concerning page', function () {
@@ -228,9 +260,10 @@ test('the current-sprint filter shows only active-sprint tasks on the concerning
         ->assertCanNotSeeTableRecords([$notInSprint]);
 });
 
-test('the concerning page only exposes the not-closed and current-sprint filters', function () {
+test('the concerning page only exposes the current-sprint filter', function () {
+    // Closed tasks have their own tab, so the not-closed filter is redundant here.
     livewire(ListConcerningTasks::class)
-        ->assertTableFilterVisible('open')
+        ->assertTableFilterHidden('open')
         ->assertTableFilterVisible('in_active_sprint')
         ->assertTableFilterHidden('status')
         ->assertTableFilterHidden('issue_type')
@@ -459,6 +492,13 @@ test('the resource registers two navigation items with concerning tasks on top',
         ->and($items[0]->getBadge())->toBe('2')
         ->and($items[1]->getLabel())->toBe('Tasks')
         ->and($items[1]->getSort())->toBe(11);
+});
+
+test('the concerning badge excludes closed tasks', function () {
+    JiraIssue::factory()->for(signedInUser())->important()->create();
+    JiraIssue::factory()->for(signedInUser())->important()->done()->create();
+
+    expect(JiraIssueResource::getNavigationItems()[0]->getBadge())->toBe('1');
 });
 
 test('the concerning badge is null when nothing needs attention', function () {

@@ -115,6 +115,23 @@ test('a task whose snooze has expired reappears', function () {
     expect(concerningIds($user))->toContain($issue->id);
 });
 
+test('a closed task is excluded even when important', function () {
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->important()->done()->create();
+
+    expect(concerningIds($user))->not->toContain($issue->id);
+});
+
+test('the open and closed scopes split tasks by the Done status category, ignoring case', function () {
+    $open = JiraIssue::factory()->create(['status_category' => 'In Progress']);
+    $done = JiraIssue::factory()->done()->create();
+    $lowercaseDone = JiraIssue::factory()->create(['status_category' => 'done']);
+
+    expect(JiraIssue::query()->open()->pluck('id')->all())->toBe([$open->id])
+        ->and(JiraIssue::query()->closed()->pluck('id')->sort()->values()->all())->toBe([$done->id, $lowercaseDone->id]);
+});
+
 test('another users concerning tasks are excluded', function () {
     $user = User::factory()->create(['jira_account_id' => 'acc-me']);
 

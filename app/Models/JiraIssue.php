@@ -145,15 +145,16 @@ class JiraIssue extends Model
     }
 
     /**
-     * Scope the query to issues that currently need the user's attention and are
-     * not snoozed. Composes {@see scopeNotSnoozed()} with {@see scopeConcerning()}.
+     * Scope the query to open issues that currently need the user's attention and
+     * are not snoozed. Composes {@see scopeOpen()} and {@see scopeNotSnoozed()}
+     * with {@see scopeConcerning()}.
      *
      * @param  Builder<JiraIssue>  $query
      * @return Builder<JiraIssue>
      */
     public function scopeConcerningFor(Builder $query, User $user): Builder
     {
-        return $query->notSnoozed()->concerning($user);
+        return $query->open()->notSnoozed()->concerning($user);
     }
 
     /**
@@ -188,6 +189,30 @@ class JiraIssue extends Model
                     });
                 });
         });
+    }
+
+    /**
+     * Scope the query to open issues: anything outside Jira's "Done" status
+     * category (compared case-insensitively).
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    public function scopeOpen(Builder $query): Builder
+    {
+        return $query->whereRaw('lower(status_category) != ?', ['done']);
+    }
+
+    /**
+     * Scope the query to closed issues: those in Jira's "Done" status category
+     * (compared case-insensitively).
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    public function scopeClosed(Builder $query): Builder
+    {
+        return $query->whereRaw('lower(status_category) = ?', ['done']);
     }
 
     /**

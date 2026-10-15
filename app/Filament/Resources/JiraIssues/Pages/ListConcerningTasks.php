@@ -27,7 +27,8 @@ class ListConcerningTasks extends ListRecords
 
     /**
      * Split the concerning list into active, unread (active and not viewed
-     * since Jira's last update) and snoozed tasks, each with a count badge.
+     * since Jira's last update), snoozed and closed tasks, each with a count
+     * badge. Closed tasks only appear under "Closed", whatever their snooze.
      *
      * @return array<string, Tab>
      */
@@ -36,6 +37,7 @@ class ListConcerningTasks extends ListRecords
         $activeQuery = $this->activeTabQuery(...);
         $unreadQuery = $this->unreadTabQuery(...);
         $snoozedQuery = $this->snoozedTabQuery(...);
+        $closedQuery = $this->closedTabQuery(...);
 
         $unreadCount = $this->tabCount($unreadQuery);
 
@@ -50,6 +52,9 @@ class ListConcerningTasks extends ListRecords
             'snoozed' => Tab::make('Snoozed')
                 ->modifyQueryUsing($snoozedQuery)
                 ->badge($this->tabCount($snoozedQuery)),
+            'closed' => Tab::make('Closed')
+                ->modifyQueryUsing($closedQuery)
+                ->badge($this->tabCount($closedQuery)),
         ];
     }
 
@@ -71,8 +76,8 @@ class ListConcerningTasks extends ListRecords
     /**
      * Restrict the table to tasks that currently need the user's attention.
      *
-     * The base query stays snooze-agnostic; the "Active", "Unread" and
-     * "Snoozed" tabs narrow it further.
+     * The base query stays snooze- and status-agnostic; the tabs narrow it
+     * further.
      *
      * @return Builder<JiraIssue>
      */
@@ -93,15 +98,15 @@ class ListConcerningTasks extends ListRecords
     }
 
     /**
-     * Concerning tasks that are not currently snoozed (an expired snooze counts
-     * as active).
+     * Open concerning tasks that are not currently snoozed (an expired snooze
+     * counts as active).
      *
      * @param  Builder<JiraIssue>  $query
      * @return Builder<JiraIssue>
      */
     private function activeTabQuery(Builder $query): Builder
     {
-        return $query->notSnoozed();
+        return $query->open()->notSnoozed();
     }
 
     /**
@@ -112,18 +117,29 @@ class ListConcerningTasks extends ListRecords
      */
     private function unreadTabQuery(Builder $query): Builder
     {
-        return $query->notSnoozed()->unread();
+        return $query->open()->notSnoozed()->unread();
     }
 
     /**
-     * Concerning tasks with a snooze still in the future.
+     * Open concerning tasks with a snooze still in the future.
      *
      * @param  Builder<JiraIssue>  $query
      * @return Builder<JiraIssue>
      */
     private function snoozedTabQuery(Builder $query): Builder
     {
-        return $query->snoozed();
+        return $query->open()->snoozed();
+    }
+
+    /**
+     * Concerning tasks that are closed in Jira, snoozed or not.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    private function closedTabQuery(Builder $query): Builder
+    {
+        return $query->closed();
     }
 
     /**

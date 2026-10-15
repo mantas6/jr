@@ -141,7 +141,8 @@ class JiraIssuesTable
                     }),
                 Filter::make('open')
                     ->label('Not closed')
-                    ->query(fn (Builder $query): Builder => $query->whereRaw('lower(status_category) != ?', ['done'])),
+                    ->visible(fn (HasTable $livewire): bool => !$livewire instanceof ListConcerningTasks)
+                    ->query(fn (Builder $query): Builder => self::onlyOpen($query)),
                 Filter::make('in_active_sprint')
                     ->label('Current sprint')
                     ->query(fn (Builder $query): Builder => $query->where('in_active_sprint', true)),
@@ -272,6 +273,17 @@ class JiraIssuesTable
             $expression.' '.($direction === 'desc' ? 'desc' : 'asc'),
             $bindings,
         );
+    }
+
+    /**
+     * Narrow a query to tasks that are not closed in Jira.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    private static function onlyOpen(Builder $query): Builder
+    {
+        return $query->open();
     }
 
     /**
