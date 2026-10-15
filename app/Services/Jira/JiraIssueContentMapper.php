@@ -46,7 +46,6 @@ class JiraIssueContentMapper
         $mapped = [];
 
         foreach ($pullRequests as $pullRequest) {
-            $url = $pullRequest['url'] ?? null;
             $reviewers = $pullRequest['reviewers'] ?? [];
             $reviewerNames = [];
             $approved = false;
@@ -60,7 +59,7 @@ class JiraIssueContentMapper
 
             $mapped[] = [
                 'title' => '#'.(string) ($pullRequest['id'] ?? '').' '.(string) ($pullRequest['name'] ?? ''),
-                'url' => is_string($url) && in_array(mb_strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true) ? $url : null,
+                'url' => self::pullRequestUrl($pullRequest),
                 'status' => mb_strtoupper((string) ($pullRequest['status'] ?? '')),
                 'repository' => (string) ($pullRequest['repositoryName'] ?? ''),
                 'source' => (string) data_get($pullRequest, 'source.branch', ''),
@@ -73,6 +72,63 @@ class JiraIssueContentMapper
         }
 
         return $mapped;
+    }
+
+    /**
+     * Build a working link to a pull request.
+     *
+     * Bitbucket Cloud reports PR and repository URLs keyed by workspace and
+     * repository UUIDs (e.g. `https://bitbucket.org/{uuid}/{uuid}/pull-requests/17`),
+     * which Bitbucket does not resolve. When the reported URL is UUID-based,
+     * the link is rebuilt from a slug-based `repositoryUrl` or, failing that,
+     * the `workspace/repository` slug in `repositoryName`. Non-HTTP URLs are
+     * rejected; anything else is returned as reported.
+     *
+     * @param  array<string, mixed>  $pullRequest
+     */
+    private static function pullRequestUrl(array $pullRequest): ?string
+    {
+        $url = self::httpUrl($pullRequest['url'] ?? null);
+        $id = (string) ($pullRequest['id'] ?? '');
+
+        if ($url === null || !self::isUuidUrl($url) || $id === '') {
+            return $url;
+        }
+
+        $repositoryUrl = self::httpUrl($pullRequest['repositoryUrl'] ?? null);
+
+        if ($repositoryUrl !== null && !self::isUuidUrl($repositoryUrl)) {
+            return mb_rtrim($repositoryUrl, '/').'/pull-requests/'.rawurlencode($id);
+        }
+
+        $repositoryName = $pullRequest['repositoryName'] ?? null;
+
+        if (is_string($repositoryName) && preg_match('#^[\w.-]+/[\w.-]+$#', $repositoryName) === 1) {
+            $origin = parse_url($url, PHP_URL_SCHEME).'://'.parse_url($url, PHP_URL_HOST);
+
+            return $origin.'/'.$repositoryName.'/pull-requests/'.rawurlencode($id);
+        }
+
+        return $url;
+    }
+
+    /**
+     * Return the value when it is an http(s) URL, otherwise null.
+     */
+    private static function httpUrl(mixed $value): ?string
+    {
+        return is_string($value) && in_array(mb_strtolower((string) parse_url($value, PHP_URL_SCHEME)), ['http', 'https'], true)
+            ? $value
+            : null;
+    }
+
+    /**
+     * Whether the URL path addresses its workspace or repository by a braced
+     * UUID (`{...}`, raw or percent-encoded) rather than by slug.
+     */
+    private static function isUuidUrl(string $url): bool
+    {
+        return str_contains(rawurldecode((string) parse_url($url, PHP_URL_PATH)), '{');
     }
 
     /**

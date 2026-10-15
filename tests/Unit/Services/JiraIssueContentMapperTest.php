@@ -70,6 +70,74 @@ test('mapPullRequests blocks unsafe URLs and tolerates missing optional details'
         ->and($mapped[1]['url'])->toBe('https://bitbucket.org/{workspace}/{repo}/pull-requests/18');
 });
 
+/**
+ * A Bitbucket Cloud pull request as returned by Jira's dev-status detail
+ * endpoint, with UUID-keyed URLs and the slug only in `repositoryName`.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function bitbucketPullRequestPayload(array $overrides = []): array
+{
+    return [
+        'author' => ['name' => 'Mantas Pauliukonis', 'avatar' => 'https://secure.gravatar.com/avatar/ca48'],
+        'id' => '1864',
+        'name' => 'SUPER-4206: add checksum verification command',
+        'commentCount' => 0,
+        'source' => [
+            'branch' => 'SUPER-4206-math2-audit',
+            'url' => 'https://bitbucket.org/%7B%7D/%7B36f6683b-0b66-49bf-a536-751b098e53dd%7D/branch/SUPER-4206-math2-audit',
+        ],
+        'destination' => [
+            'branch' => 'dev',
+            'url' => 'https://bitbucket.org/%7B%7D/%7B36f6683b-0b66-49bf-a536-751b098e53dd%7D/branch/dev',
+        ],
+        'reviewers' => [['name' => 'gytis.putvinskas', 'approved' => false]],
+        'status' => 'DRAFT',
+        'url' => 'https://bitbucket.org/{f492f7ff-6677-4603-af75-f702e29b0071}/{36f6683b-0b66-49bf-a536-751b098e53dd}/pull-requests/1864',
+        'lastUpdate' => '2026-09-09T12:18:21.713+0000',
+        'repositoryId' => '7b33366636363833622d306236362d343962662d613533362d3735316230393865353364647d',
+        'repositoryName' => 'frontit-internal/superlotto-front',
+        'repositoryUrl' => 'https://bitbucket.org/{}/{36f6683b-0b66-49bf-a536-751b098e53dd}',
+        ...$overrides,
+    ];
+}
+
+test('mapPullRequests rebuilds UUID-based Bitbucket links from the repository slug', function (string $url) {
+    $mapped = JiraIssueContentMapper::mapPullRequests([bitbucketPullRequestPayload(['url' => $url])]);
+
+    expect($mapped[0]['url'])->toBe('https://bitbucket.org/frontit-internal/superlotto-front/pull-requests/1864')
+        ->and($mapped[0]['repository'])->toBe('frontit-internal/superlotto-front')
+        ->and($mapped[0]['status'])->toBe('DRAFT');
+})->with([
+    'raw braces' => ['https://bitbucket.org/{f492f7ff-6677-4603-af75-f702e29b0071}/{36f6683b-0b66-49bf-a536-751b098e53dd}/pull-requests/1864'],
+    'percent-encoded braces' => ['https://bitbucket.org/%7Bf492f7ff-6677-4603-af75-f702e29b0071%7D/%7B36f6683b-0b66-49bf-a536-751b098e53dd%7D/pull-requests/1864'],
+]);
+
+test('mapPullRequests prefers a slug-based repository URL when Jira reports one', function () {
+    $mapped = JiraIssueContentMapper::mapPullRequests([bitbucketPullRequestPayload([
+        'repositoryUrl' => 'https://bitbucket.org/frontit/superlotto-front/',
+        'repositoryName' => 'superlotto-front',
+    ])]);
+
+    expect($mapped[0]['url'])->toBe('https://bitbucket.org/frontit/superlotto-front/pull-requests/1864');
+});
+
+test('mapPullRequests keeps the reported link when it is slug-based or no slug is available', function (array $overrides, string $expected) {
+    $mapped = JiraIssueContentMapper::mapPullRequests([bitbucketPullRequestPayload($overrides)]);
+
+    expect($mapped[0]['url'])->toBe($expected);
+})->with([
+    'repository name without workspace' => [
+        ['repositoryName' => 'superlotto-front'],
+        'https://bitbucket.org/{f492f7ff-6677-4603-af75-f702e29b0071}/{36f6683b-0b66-49bf-a536-751b098e53dd}/pull-requests/1864',
+    ],
+    'slug-based link' => [
+        ['url' => 'https://github.com/acme/app/pull/1864'],
+        'https://github.com/acme/app/pull/1864',
+    ],
+]);
+
 test('map extracts the rendered description html', function () {
     $result = JiraIssueContentMapper::map([
         'renderedFields' => ['description' => '<p>Some <strong>details</strong>.</p>'],
