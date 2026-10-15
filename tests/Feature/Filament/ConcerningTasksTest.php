@@ -395,7 +395,7 @@ test('the concerning page only exposes the current-sprint and assigned-to-me fil
         ->assertTableFilterHidden('sprint');
 });
 
-test('the full task list exposes the trimmed filters plus not-closed and current-sprint', function () {
+test('the full task list exposes the trimmed filters plus not-closed, current-sprint and assigned-to-me', function () {
     livewire(ListJiraIssues::class)
         ->assertTableFilterVisible('status')
         ->assertTableFilterVisible('issue_type')
@@ -403,7 +403,19 @@ test('the full task list exposes the trimmed filters plus not-closed and current
         ->assertTableFilterVisible('sprint')
         ->assertTableFilterVisible('open')
         ->assertTableFilterVisible('in_active_sprint')
-        ->assertTableFilterHidden('assigned_to_me');
+        ->assertTableFilterVisible('assigned_to_me');
+});
+
+test('the assigned-to-me filter shows only tasks assigned to me on the full task list', function () {
+    $user = signedInUser();
+
+    $mine = JiraIssue::factory()->for($user)->create(['assignee_account_id' => $user->jira_account_id]);
+    $someoneElses = JiraIssue::factory()->for($user)->create(['assignee_account_id' => 'acc-someone']);
+
+    livewire(ListJiraIssues::class)
+        ->filterTable('assigned_to_me', true)
+        ->assertCanSeeTableRecords([$mine])
+        ->assertCanNotSeeTableRecords([$someoneElses]);
 });
 
 test('starring a task from the full list marks it important', function () {

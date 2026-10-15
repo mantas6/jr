@@ -150,7 +150,6 @@ class JiraIssuesTable
                     ->query(fn (Builder $query): Builder => $query->where('in_active_sprint', true)),
                 Filter::make('assigned_to_me')
                     ->label('Assigned to me')
-                    ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
                     ->query(fn (Builder $query): Builder => self::onlyAssignedToMe($query)),
             ])
             ->recordUrl(fn (JiraIssue $record): string => JiraIssueResource::getUrl('view', ['record' => $record]))
