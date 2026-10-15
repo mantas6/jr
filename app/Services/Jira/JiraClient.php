@@ -413,6 +413,21 @@ final class JiraClient
     }
 
     /**
+     * Search users who can view the given issue, i.e. the people who can be
+     * mentioned in its comments.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function searchUsersWhoCanViewIssue(string $issueKey, string $query, int $maxResults = 10): array
+    {
+        return $this->send(fn (PendingRequest $request): Response => $request->get('/rest/api/3/user/viewissue/search', [
+            'issueKey' => $issueKey,
+            'query' => $query,
+            'maxResults' => $maxResults,
+        ]))->json();
+    }
+
+    /**
      * Assign (or unassign, when `$accountId` is null) an issue.
      */
     public function assignIssue(string $key, ?string $accountId): void

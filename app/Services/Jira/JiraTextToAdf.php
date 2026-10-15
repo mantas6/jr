@@ -27,6 +27,71 @@ class JiraTextToAdf
     }
 
     /**
+     * Parse a single line of text into inline ADF nodes, applying marks.
+     * Also used by {@see JiraRichTextToAdf} for unformatted editor text.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function inline(string $text): array
+    {
+        $nodes = [];
+        $buffer = '';
+        $length = mb_strlen($text);
+        $index = 0;
+
+        while ($index < $length) {
+            $rest = mb_substr($text, $index);
+
+            if (preg_match('/^`([^`]+)`/', $rest, $matches) === 1) {
+                self::flush($nodes, $buffer);
+                $nodes[] = self::marked($matches[1], [['type' => 'code']]);
+                $index += mb_strlen($matches[0]);
+
+                continue;
+            }
+
+            if (preg_match('/^\[([^\]]+)\]\(([^)\s]+)\)/', $rest, $matches) === 1) {
+                self::flush($nodes, $buffer);
+                $nodes[] = self::marked($matches[1], [['type' => 'link', 'attrs' => ['href' => $matches[2]]]]);
+                $index += mb_strlen($matches[0]);
+
+                continue;
+            }
+
+            if (preg_match('/^\*\*(.+?)\*\*/', $rest, $matches) === 1) {
+                self::flush($nodes, $buffer);
+                $nodes[] = self::marked($matches[1], [['type' => 'strong']]);
+                $index += mb_strlen($matches[0]);
+
+                continue;
+            }
+
+            if (preg_match('/^\*(.+?)\*/', $rest, $matches) === 1 || preg_match('/^_(.+?)_/', $rest, $matches) === 1) {
+                self::flush($nodes, $buffer);
+                $nodes[] = self::marked($matches[1], [['type' => 'em']]);
+                $index += mb_strlen($matches[0]);
+
+                continue;
+            }
+
+            if (preg_match('/^(https?:\/\/[^\s]+)/', $rest, $matches) === 1) {
+                self::flush($nodes, $buffer);
+                $nodes[] = self::marked($matches[1], [['type' => 'link', 'attrs' => ['href' => $matches[1]]]]);
+                $index += mb_strlen($matches[0]);
+
+                continue;
+            }
+
+            $buffer .= mb_substr($text, $index, 1);
+            $index++;
+        }
+
+        self::flush($nodes, $buffer);
+
+        return $nodes;
+    }
+
+    /**
      * Parse the text into a list of top-level block nodes.
      *
      * @return list<array<string, mixed>>
@@ -195,70 +260,6 @@ class JiraTextToAdf
             'attrs' => ['level' => $level],
             'content' => self::inline($text),
         ];
-    }
-
-    /**
-     * Parse a single line of text into inline ADF nodes, applying marks.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private static function inline(string $text): array
-    {
-        $nodes = [];
-        $buffer = '';
-        $length = mb_strlen($text);
-        $index = 0;
-
-        while ($index < $length) {
-            $rest = mb_substr($text, $index);
-
-            if (preg_match('/^`([^`]+)`/', $rest, $matches) === 1) {
-                self::flush($nodes, $buffer);
-                $nodes[] = self::marked($matches[1], [['type' => 'code']]);
-                $index += mb_strlen($matches[0]);
-
-                continue;
-            }
-
-            if (preg_match('/^\[([^\]]+)\]\(([^)\s]+)\)/', $rest, $matches) === 1) {
-                self::flush($nodes, $buffer);
-                $nodes[] = self::marked($matches[1], [['type' => 'link', 'attrs' => ['href' => $matches[2]]]]);
-                $index += mb_strlen($matches[0]);
-
-                continue;
-            }
-
-            if (preg_match('/^\*\*(.+?)\*\*/', $rest, $matches) === 1) {
-                self::flush($nodes, $buffer);
-                $nodes[] = self::marked($matches[1], [['type' => 'strong']]);
-                $index += mb_strlen($matches[0]);
-
-                continue;
-            }
-
-            if (preg_match('/^\*(.+?)\*/', $rest, $matches) === 1 || preg_match('/^_(.+?)_/', $rest, $matches) === 1) {
-                self::flush($nodes, $buffer);
-                $nodes[] = self::marked($matches[1], [['type' => 'em']]);
-                $index += mb_strlen($matches[0]);
-
-                continue;
-            }
-
-            if (preg_match('/^(https?:\/\/[^\s]+)/', $rest, $matches) === 1) {
-                self::flush($nodes, $buffer);
-                $nodes[] = self::marked($matches[1], [['type' => 'link', 'attrs' => ['href' => $matches[1]]]]);
-                $index += mb_strlen($matches[0]);
-
-                continue;
-            }
-
-            $buffer .= mb_substr($text, $index, 1);
-            $index++;
-        }
-
-        self::flush($nodes, $buffer);
-
-        return $nodes;
     }
 
     /**

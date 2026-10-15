@@ -1123,6 +1123,81 @@ test('adding a comment from the view page posts the ADF body to jira and notifie
     });
 });
 
+test('a comment with an editor mention posts an ADF mention of the jira account', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-83',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/issue/PROJ-83/comment' => Http::response(['id' => '10501'], 201),
+        '*/rest/api/3/issue/PROJ-83*' => Http::response(['renderedFields' => [], 'fields' => []]),
+    ]);
+
+    livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent')
+        ->callAction(TestAction::make('addComment')->schemaComponent('jiraContent.comments.commentActions'), data: ['body' => [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'paragraph',
+                'content' => [
+                    ['type' => 'mention', 'attrs' => ['id' => '712020:abc', 'label' => 'Rasa Sataite', 'char' => '@']],
+                    ['type' => 'text', 'text' => ' please review'],
+                ],
+            ]],
+        ]])
+        ->assertNotified('Comment added');
+
+    Http::assertSent(fn ($request): bool => $request->method() === 'POST'
+        && str_contains($request->url(), '/rest/api/3/issue/PROJ-83/comment')
+        && $request['body']['content'][0]['content'] === [
+            ['type' => 'mention', 'attrs' => ['id' => '712020:abc', 'text' => '@Rasa Sataite']],
+            ['type' => 'text', 'text' => ' please review'],
+        ]);
+});
+
+test('the comment editor suggests active people who can view the issue for mentions', function () {
+    $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
+    actingAs($user);
+
+    $issue = JiraIssue::factory()->for($user)->create([
+        'jira_key' => 'PROJ-84',
+        'issue_type' => 'Task',
+        'status_id' => '1',
+    ]);
+
+    Http::fake([
+        '*/rest/api/3/user/viewissue/search*' => Http::response([
+            ['accountId' => 'acc-1', 'displayName' => 'Rasa Sataite', 'accountType' => 'atlassian', 'active' => true],
+            ['accountId' => 'acc-2', 'displayName' => 'Old Rasa', 'accountType' => 'atlassian', 'active' => false],
+            ['accountId' => 'acc-3', 'displayName' => 'Rasa Bot', 'accountType' => 'app', 'active' => true],
+        ]),
+        '*/rest/api/3/issue/PROJ-84*' => Http::response(['renderedFields' => [], 'fields' => []]),
+    ]);
+
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
+        ->call('loadDeferredSchema', 'infolist.jiraContent')
+        ->mountAction(TestAction::make('addComment')->schemaComponent('jiraContent.comments.commentActions'));
+
+    $search = fn (string $query): mixed => $component->instance()
+        ->callSchemaComponentMethod('mountedActionSchema0.body', 'getMentionSearchResultsForJs', ['search' => $query]);
+
+    expect($search('ras'))->toBe(['acc-1' => 'Rasa Sataite'])
+        ->and($search('ras'))->toBe(['acc-1' => 'Rasa Sataite'])
+        ->and($search(''))->toBe([]);
+
+    $searches = Http::recorded(fn ($request): bool => str_contains($request->url(), '/rest/api/3/user/viewissue/search'))
+        ->map(fn (array $pair): array => [$pair[0]['issueKey'], $pair[0]['query']])
+        ->values()
+        ->all();
+
+    expect($searches)->toBe([['PROJ-84', 'ras']]);
+});
+
 test('a rejected comment from the view page notifies and halts', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     actingAs($user);

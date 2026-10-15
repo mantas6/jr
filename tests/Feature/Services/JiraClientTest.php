@@ -252,6 +252,21 @@ test('searchAssignableUsers sends project and query params', function () {
     });
 });
 
+test('searchUsersWhoCanViewIssue sends issue key, query and limit params', function () {
+    Http::fake(['*' => Http::response([['accountId' => 'u1']])]);
+
+    $result = JiraClient::forUser(jiraUser())->searchUsersWhoCanViewIssue('PROJ-1', 'jane');
+
+    expect($result)->toBe([['accountId' => 'u1']]);
+
+    Http::assertSent(function (Request $request) {
+        return str_starts_with($request->url(), 'https://example.atlassian.net/rest/api/3/user/viewissue/search')
+            && $request['issueKey'] === 'PROJ-1'
+            && $request['query'] === 'jane'
+            && (int) $request['maxResults'] === 10;
+    });
+});
+
 test('getIssueContent requests description, comments and subtasks with rendered fields', function () {
     $body = [
         'renderedFields' => ['description' => '<p>Hello</p>'],

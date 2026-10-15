@@ -11,11 +11,12 @@ use App\Services\Jira\JiraClient;
 use App\Services\Jira\JiraIssueContentMapper;
 use App\Services\Jira\JiraPriority;
 use App\Services\Jira\JiraPullRequestState;
+use App\Services\Jira\JiraRichTextToAdf;
 use App\Services\Jira\JiraStatus;
-use App\Services\Jira\JiraTextToAdf;
 use Closure;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\RichEditor;
+use Filament\Forms\Components\RichEditor\MentionProvider;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\RepeatableEntry\TableColumn;
 use Filament\Infolists\Components\TextEntry;
@@ -28,6 +29,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Js;
 
 class JiraIssueInfolist
@@ -274,6 +276,7 @@ class JiraIssueInfolist
     /**
      * Build the "Add comment" action for the Comments section header. It posts
      * a new comment to Jira, then refreshes the live content so it appears.
+     * Typing `@` in the editor mentions people who can view the issue.
      */
     private static function addCommentAction(): Action
     {
@@ -282,16 +285,26 @@ class JiraIssueInfolist
             ->icon(Heroicon::OutlinedChatBubbleLeftEllipsis)
             ->visible(fn (): bool => self::currentUser()->hasJiraConnection())
             ->schema([
-                Textarea::make('body')
+                RichEditor::make('body')
                     ->label('Comment')
                     ->required()
-                    ->rows(8)
-                    ->helperText('Supports basic Markdown: **bold**, *italic*, `code`, lists, fenced code blocks, links.'),
+                    ->json()
+                    ->toolbarButtons([
+                        ['bold', 'italic', 'strike', 'code', 'link'],
+                        ['h2', 'h3'],
+                        ['blockquote', 'codeBlock', 'bulletList', 'orderedList'],
+                        ['undo', 'redo'],
+                    ])
+                    ->mentions(fn (JiraIssue $record): array => [
+                        MentionProvider::make('@')
+                            ->getSearchResultsUsing(fn (string $search): array => self::searchMentionableUsers($record, $search)),
+                    ])
+                    ->helperText('Type @ to mention someone. Basic Markdown also works: **bold**, *italic*, `code`, lists, fenced code blocks, links.'),
             ])
             ->action(function (array $data, Action $action, ViewJiraIssue $livewire, JiraIssue $record): void {
                 try {
                     JiraClient::forUser(self::currentUser())
-                        ->addComment($record->jira_key, JiraTextToAdf::convert($data['body']));
+                        ->addComment($record->jira_key, JiraRichTextToAdf::convert($data['body']));
                 } catch (JiraApiException $exception) {
                     Notification::make()->danger()->title('Comment failed')->body($exception->getMessage())->send();
 
@@ -302,6 +315,38 @@ class JiraIssueInfolist
 
                 Notification::make()->success()->title('Comment added')->send();
             });
+    }
+
+    /**
+     * Search the people who can view the issue, keyed by Jira account id, for
+     * the comment editor's `@` mentions. Results are cached briefly per query.
+     *
+     * @return array<string, string>
+     */
+    private static function searchMentionableUsers(JiraIssue $record, string $search): array
+    {
+        $user = self::currentUser();
+
+        if (!$user->hasJiraConnection() || blank($search)) {
+            return [];
+        }
+
+        try {
+            $users = Cache::remember(
+                "jira:mentionable:{$user->id}:{$record->jira_key}:".md5(mb_strtolower($search)),
+                300,
+                fn (): array => JiraClient::forUser($user)->searchUsersWhoCanViewIssue($record->jira_key, $search),
+            );
+        } catch (JiraApiException) {
+            return [];
+        }
+
+        return collect($users)
+            ->filter(fn (array $jiraUser): bool => filled($jiraUser['accountId'] ?? null)
+                && ($jiraUser['accountType'] ?? 'atlassian') === 'atlassian'
+                && ($jiraUser['active'] ?? true) !== false)
+            ->mapWithKeys(fn (array $jiraUser): array => [(string) $jiraUser['accountId'] => (string) ($jiraUser['displayName'] ?? $jiraUser['accountId'])])
+            ->all();
     }
 
     /**
