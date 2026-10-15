@@ -148,6 +148,10 @@ class JiraIssuesTable
                 Filter::make('in_active_sprint')
                     ->label('Current sprint')
                     ->query(fn (Builder $query): Builder => $query->where('in_active_sprint', true)),
+                Filter::make('assigned_to_me')
+                    ->label('Assigned to me')
+                    ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
+                    ->query(fn (Builder $query): Builder => self::onlyAssignedToMe($query)),
             ])
             ->recordUrl(fn (JiraIssue $record): string => JiraIssueResource::getUrl('view', ['record' => $record]))
             ->defaultSort('jira_updated_at', 'desc')
@@ -354,6 +358,17 @@ class JiraIssuesTable
     private static function onlyOpen(Builder $query): Builder
     {
         return $query->open();
+    }
+
+    /**
+     * Narrow a query to tasks assigned to the current user's Jira account.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    private static function onlyAssignedToMe(Builder $query): Builder
+    {
+        return $query->assignedTo(self::user());
     }
 
     /**

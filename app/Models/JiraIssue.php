@@ -269,6 +269,22 @@ class JiraIssue extends Model
     }
 
     /**
+     * Scope the query to issues assigned to the user's Jira account. Matches
+     * nothing when the user has no Jira account id.
+     *
+     * @param  Builder<JiraIssue>  $query
+     * @return Builder<JiraIssue>
+     */
+    public function scopeAssignedTo(Builder $query, User $user): Builder
+    {
+        if (blank($user->jira_account_id)) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where('assignee_account_id', $user->jira_account_id);
+    }
+
+    /**
      * Scope the query to open issues: anything outside Jira's "Done" status
      * category (compared case-insensitively).
      *

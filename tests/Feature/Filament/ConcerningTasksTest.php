@@ -370,11 +370,25 @@ test('the current-sprint filter shows only active-sprint tasks on the concerning
         ->assertCanNotSeeTableRecords([$notInSprint]);
 });
 
-test('the concerning page only exposes the current-sprint filter', function () {
+test('the assigned-to-me filter shows only tasks assigned to me on the concerning page', function () {
+    $user = signedInUser();
+
+    $mine = JiraIssue::factory()->for($user)->important()->create(['assignee_account_id' => $user->jira_account_id]);
+    $someoneElses = JiraIssue::factory()->for($user)->important()->create(['assignee_account_id' => 'acc-someone']);
+    $unassigned = JiraIssue::factory()->for($user)->important()->create(['assignee_account_id' => null]);
+
+    livewire(ListConcerningTasks::class)
+        ->filterTable('assigned_to_me', true)
+        ->assertCanSeeTableRecords([$mine])
+        ->assertCanNotSeeTableRecords([$someoneElses, $unassigned]);
+});
+
+test('the concerning page only exposes the current-sprint and assigned-to-me filters', function () {
     // Closed tasks have their own tab, so the not-closed filter is redundant here.
     livewire(ListConcerningTasks::class)
         ->assertTableFilterHidden('open')
         ->assertTableFilterVisible('in_active_sprint')
+        ->assertTableFilterVisible('assigned_to_me')
         ->assertTableFilterHidden('status')
         ->assertTableFilterHidden('issue_type')
         ->assertTableFilterHidden('assignee_name')
@@ -388,7 +402,8 @@ test('the full task list exposes the trimmed filters plus not-closed and current
         ->assertTableFilterVisible('assignee_name')
         ->assertTableFilterVisible('sprint')
         ->assertTableFilterVisible('open')
-        ->assertTableFilterVisible('in_active_sprint');
+        ->assertTableFilterVisible('in_active_sprint')
+        ->assertTableFilterHidden('assigned_to_me');
 });
 
 test('starring a task from the full list marks it important', function () {
