@@ -28,6 +28,30 @@ final class JiraIssueActions
     }
 
     /**
+     * Update the issue's pull request summary columns (`pr_state`, `pr_count`,
+     * `pr_approved`) from its mapped pull request details, saving quietly
+     * only when they changed. An empty list leaves the summary untouched.
+     *
+     * @param  list<array{status: string, approved: bool}>  $pullRequests  Pull requests mapped by {@see JiraIssueContentMapper::mapPullRequests()}.
+     */
+    public static function syncPullRequestSummary(JiraIssue $issue, array $pullRequests): void
+    {
+        if ($pullRequests === []) {
+            return;
+        }
+
+        $issue->fill([
+            'pr_state' => JiraPullRequestState::fromStatuses(array_column($pullRequests, 'status')),
+            'pr_count' => count($pullRequests),
+            'pr_approved' => JiraPullRequestState::hasApproval($pullRequests),
+        ]);
+
+        if ($issue->isDirty(['pr_state', 'pr_count', 'pr_approved'])) {
+            $issue->saveQuietly();
+        }
+    }
+
+    /**
      * Transition an issue to the target status, then refresh the local row.
      *
      * @throws JiraApiException When the target status is not reachable or Jira rejects the request.
@@ -83,9 +107,7 @@ final class JiraIssueActions
 
     /**
      * Fetch the issue's linked pull requests from Jira and sync its pull
-     * request summary columns (`pr_state`, `pr_count`, `pr_approved`) from
-     * them, saving quietly only when they changed. An empty result leaves the
-     * synced summary untouched.
+     * request summary columns from them (see {@see self::syncPullRequestSummary()}).
      *
      * @return list<array{title: string, url: string|null, status: string, repository: string, source: string, destination: string, author: string, reviewers: list<string>, approved: bool, updated: CarbonInterface|null}>
      *
@@ -95,19 +117,7 @@ final class JiraIssueActions
     {
         $pullRequests = JiraIssueContentMapper::mapPullRequests($this->client->getPullRequests($issue->jira_id));
 
-        if ($pullRequests === []) {
-            return [];
-        }
-
-        $issue->fill([
-            'pr_state' => JiraPullRequestState::fromStatuses(array_column($pullRequests, 'status')),
-            'pr_count' => count($pullRequests),
-            'pr_approved' => JiraPullRequestState::hasApproval($pullRequests),
-        ]);
-
-        if ($issue->isDirty(['pr_state', 'pr_count', 'pr_approved'])) {
-            $issue->saveQuietly();
-        }
+        self::syncPullRequestSummary($issue, $pullRequests);
 
         return $pullRequests;
     }

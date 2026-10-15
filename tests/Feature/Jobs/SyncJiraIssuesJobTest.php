@@ -241,6 +241,46 @@ test('sync refreshes approvals for open and draft pull requests and keeps them w
         ->and($unavailable->fresh()->pr_approved)->toBeTrue();
 });
 
+test('an incremental sync refreshes the state and count of active pull requests on issues Jira did not report as updated', function () {
+    travelTo(now()->startOfSecond());
+
+    $user = syncUser([
+        'jira_last_synced_at' => now()->subMinutes(10),
+        'jira_last_full_synced_at' => now()->subHours(2),
+    ]);
+    $merged = JiraIssue::factory()->for($user)->withPullRequest('OPEN', 1)->create(['jira_id' => '2001']);
+    $reopened = JiraIssue::factory()->for($user)->withPullRequest('DRAFT', 1)->create(['jira_id' => '2002']);
+    $summary = ['summary' => ['pullrequest' => ['byInstanceType' => ['bitbucket' => ['count' => 2]]]]];
+
+    Http::fake([
+        '*/rest/api/3/field' => Http::response([]),
+        '*/rest/api/3/search/jql*' => Http::response(['issues' => [], 'isLast' => true]),
+        '*/rest/dev-status/1.0/issue/summary*' => Http::response($summary),
+        '*/rest/dev-status/1.0/issue/detail?issueId=2001*' => Http::response(['detail' => [['pullRequests' => [
+            ['id' => '1', 'status' => 'MERGED', 'reviewers' => [['name' => 'Alice', 'approved' => true]]],
+            ['id' => '2', 'status' => 'DECLINED'],
+        ]]]]),
+        '*/rest/dev-status/1.0/issue/detail?issueId=2002*' => Http::response(['detail' => [['pullRequests' => [
+            ['id' => '3', 'status' => 'OPEN', 'reviewers' => [['name' => 'Alice', 'approved' => true]]],
+            ['id' => '4', 'status' => 'MERGED'],
+        ]]]]),
+    ]);
+
+    (new SyncJiraIssuesJob($user))->handle();
+
+    assertSyncJql('project = "PROJ" AND updated >= -15m ORDER BY updated DESC');
+
+    $merged->refresh();
+    $reopened->refresh();
+
+    expect($merged->pr_state)->toBe(JiraPullRequestState::Merged)
+        ->and($merged->pr_count)->toBe(2)
+        ->and($merged->pr_approved)->toBeFalse()
+        ->and($reopened->pr_state)->toBe(JiraPullRequestState::Open)
+        ->and($reopened->pr_count)->toBe(2)
+        ->and($reopened->pr_approved)->toBeTrue();
+});
+
 test('a sync without a sprint field stores null sprints', function () {
     $user = syncUser();
 

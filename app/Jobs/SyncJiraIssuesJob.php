@@ -9,6 +9,7 @@ use App\Models\JiraRelease;
 use App\Models\User;
 use App\Services\Jira\JiraApiException;
 use App\Services\Jira\JiraClient;
+use App\Services\Jira\JiraIssueActions;
 use App\Services\Jira\JiraIssueContentMapper;
 use App\Services\Jira\JiraIssueMapper;
 use App\Services\Jira\JiraPullRequestState;
@@ -236,7 +237,7 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
             $isLast = $page['isLast'] ?? ($nextPageToken === null);
         } while (!$isLast && $nextPageToken !== null);
 
-        $this->refreshPullRequestApprovals($client);
+        $this->refreshActivePullRequests($client);
         $this->warmTransitionsCache($client, $representatives);
 
         $attributes = [
@@ -431,40 +432,33 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * Refresh whether each task with an open or draft pull request has an
-     * approval. Jira only reports approvals in pull request details, and an
-     * approval does not bump the issue's updated time, so every such task is
-     * checked on each sync. A failed lookup keeps the previous value.
+     * Refresh the pull request summary (state, count and approval) of every
+     * task with an open or draft pull request from its live pull request
+     * details. Merging, declining or approving a pull request does not bump
+     * the issue's updated time, so incremental syncs never re-fetch these
+     * issues; checking them on each sync keeps the summary current. A failed
+     * lookup keeps the previous values.
      */
-    private function refreshPullRequestApprovals(JiraClient $client): void
+    private function refreshActivePullRequests(JiraClient $client): void
     {
-        $approvals = JiraIssue::query()
+        $issues = JiraIssue::query()
             ->where('user_id', $this->user->id)
             ->whereIn('pr_state', [JiraPullRequestState::Open->value, JiraPullRequestState::Draft->value])
-            ->pluck('pr_approved', 'jira_id');
+            ->get(['id', 'jira_id', 'pr_state', 'pr_count', 'pr_approved'])
+            ->keyBy('jira_id');
 
-        /** @var array{approved: list<string>, unapproved: list<string>} $changes */
-        $changes = ['approved' => [], 'unapproved' => []];
+        if ($issues->isEmpty()) {
+            return;
+        }
 
-        foreach ($client->getPullRequestsForIssues(array_values($approvals->keys()->map(strval(...))->all())) as $issueId => $pullRequests) {
-            if ($pullRequests === null) {
+        foreach ($client->getPullRequestsForIssues(array_values($issues->keys()->map(strval(...))->all())) as $issueId => $pullRequests) {
+            $issue = $issues->get((string) $issueId);
+
+            if ($pullRequests === null || $issue === null) {
                 continue;
             }
 
-            $approved = JiraPullRequestState::hasApproval(JiraIssueContentMapper::mapPullRequests($pullRequests));
-
-            if ($approved !== (bool) $approvals->get($issueId)) {
-                $changes[$approved ? 'approved' : 'unapproved'][] = (string) $issueId;
-            }
-        }
-
-        foreach ($changes as $change => $issueIds) {
-            if ($issueIds !== []) {
-                JiraIssue::query()
-                    ->where('user_id', $this->user->id)
-                    ->whereIn('jira_id', $issueIds)
-                    ->update(['pr_approved' => $change === 'approved']);
-            }
+            JiraIssueActions::syncPullRequestSummary($issue, JiraIssueContentMapper::mapPullRequests($pullRequests));
         }
     }
 
