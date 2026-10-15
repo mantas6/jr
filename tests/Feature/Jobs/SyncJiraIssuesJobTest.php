@@ -416,6 +416,7 @@ function fakeIssueSyncWithAssignee(?string $accountId): void
 {
     $payload = jiraIssuePayload('1001', 'PROJ-1', 'Reassigned issue');
     $payload['fields']['assignee'] = $accountId === null ? null : ['accountId' => $accountId, 'displayName' => 'Someone Else'];
+    $payload['fields']['updated'] = now()->format('Y-m-d\\TH:i:s.vO');
 
     Http::fake([
         '*/rest/api/3/field' => Http::response([]),
