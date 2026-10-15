@@ -762,7 +762,7 @@ test('an Epic child lookup failure preserves the description and comments', func
     expect($partial)->not->toContain('Subtasks');
 });
 
-test('the view page puts the PR summary in a collapsed section header with expandable details', function () {
+test('the view page shows the PR summary in an expanded, collapsible section header', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
     actingAs($user);
     $issue = JiraIssue::factory()->for($user)->withPullRequest('MERGED', 1)->create([
@@ -804,11 +804,11 @@ test('the view page puts the PR summary in a collapsed section header with expan
     $prSections = array_values(array_filter($sections, fn (array $section): bool => str_contains($section[2], 'Pull requests')));
 
     expect($prSections)->toHaveCount(1);
-    expect($prSections[0][1])->toMatch('/isCollapsed:\s*true/')
+    expect($prSections[0][1])->toMatch('/isCollapsed:\s*false/')
         ->toContain('fi-collapsible');
     expect($prSections[0][2])->toContain('fi-section-header-after-ctn')
         ->toContain('1 pull request, merged')
-        ->toContain('aria-expanded="false"');
+        ->toContain('aria-expanded="true"');
 
     expect($partial)
         ->toContain('#17 Ship &lt;script&gt;alert(1)&lt;/script&gt;')

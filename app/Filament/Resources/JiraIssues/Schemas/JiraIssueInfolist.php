@@ -142,7 +142,7 @@ class JiraIssueInfolist
                                     ]),
                                 Section::make('Pull requests')
                                     ->columnSpanFull()
-                                    ->collapsed()
+                                    ->collapsible()
                                     ->visible(fn (JiraIssue $record): bool => (int) $record->pr_count > 0)
                                     ->afterHeader([
                                         TextEntry::make('pull_request_summary')
