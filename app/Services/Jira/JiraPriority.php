@@ -118,7 +118,8 @@ class JiraPriority
      * first, since CASE stops at the first match), then `P1`..`P5` prefixes,
      * else the unknown rank. Returns the expression and its bound parameters.
      *
-     * @return array{0: string, 1: list<string>}
+     * @param  literal-string  $column
+     * @return array{0: literal-string, 1: list<string>}
      */
     public static function rankCaseExpression(string $column): array
     {

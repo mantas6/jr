@@ -8,20 +8,24 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
+use function Pest\Laravel\actingAs;
+use function Pest\Laravel\assertAuthenticated;
+use function Pest\Laravel\get;
+
 test('guests are redirected to login', function () {
-    $this->get(JiraConnection::getUrl())
+    get(JiraConnection::getUrl())
         ->assertRedirect('/login');
 });
 
 test('an authenticated user can render the page', function () {
-    $this->actingAs(User::factory()->create());
+    actingAs(User::factory()->create());
 
     livewire(JiraConnection::class)
         ->assertOk();
 });
 
 test('a guest can register and lands authenticated', function () {
-    $this->get('/register')->assertOk();
+    get('/register')->assertOk();
 
     livewire(Register::class)
         ->fillForm([
@@ -33,14 +37,14 @@ test('a guest can register and lands authenticated', function () {
         ->call('register')
         ->assertHasNoFormErrors();
 
-    $this->assertAuthenticated();
+    assertAuthenticated();
     expect(User::where('email', 'jane@example.com')->exists())->toBeTrue();
 });
 
 test('the form validates the credentials', function () {
     Http::fake();
 
-    $this->actingAs(User::factory()->create());
+    actingAs(User::factory()->create());
 
     livewire(JiraConnection::class)
         ->fillForm([
@@ -68,7 +72,7 @@ test('saving verifies the credentials and persists the connection', function () 
     ]);
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     livewire(JiraConnection::class)
         ->fillForm([
@@ -98,7 +102,7 @@ test('saving refuses invalid credentials and persists nothing', function () {
     ]);
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     livewire(JiraConnection::class)
         ->fillForm([
@@ -128,7 +132,7 @@ test('the api token is encrypted at rest but readable through the model', functi
     ]);
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     livewire(JiraConnection::class)
         ->fillForm([
@@ -157,7 +161,7 @@ test('re-saving with a blank token keeps the existing token', function () {
     $user = User::factory()->withJiraConnection()->create([
         'jira_api_token' => 'original-token',
     ]);
-    $this->actingAs($user);
+    actingAs($user);
 
     livewire(JiraConnection::class)
         ->fillForm([
@@ -180,7 +184,7 @@ test('the sync action dispatches the job and notifies', function () {
     Queue::fake();
 
     $user = User::factory()->withJiraConnection()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     livewire(JiraConnection::class)
         ->callAction('sync')
@@ -193,7 +197,7 @@ test('the full resync action dispatches a forced job and notifies', function () 
     Queue::fake();
 
     $user = User::factory()->withJiraConnection()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     livewire(JiraConnection::class)
         ->callAction('forceSync')
@@ -206,7 +210,7 @@ test('the full resync action dispatches a forced job and notifies', function () 
 });
 
 test('the sync actions are disabled when jira is not connected', function () {
-    $this->actingAs(User::factory()->create());
+    actingAs(User::factory()->create());
 
     livewire(JiraConnection::class)
         ->assertActionDisabled('sync')
@@ -215,7 +219,7 @@ test('the sync actions are disabled when jira is not connected', function () {
 
 test('disconnecting clears every jira field', function () {
     $user = User::factory()->withJiraConnection()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     livewire(JiraConnection::class)
         ->callAction('disconnect')

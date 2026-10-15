@@ -5,8 +5,10 @@ use App\Models\User;
 use App\Services\Jira\JiraIssueReason;
 use Illuminate\Support\Carbon;
 
+use function Pest\Laravel\travelTo;
+
 test('the reason is the most recent trigger, falling back to the current state', function (Closure $attributes, ?JiraIssueReason $expected) {
-    $this->travelTo(Carbon::parse('2026-03-10 12:00:00'));
+    travelTo(Carbon::parse('2026-03-10 12:00:00'));
 
     $issue = JiraIssue::factory()->make([
         'user_id' => 1,

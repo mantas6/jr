@@ -1,16 +1,18 @@
 <?php
 
+use function Pest\Laravel\get;
+
 test('the root route redirects guests to the filament login', function () {
-    $this->get('/')
+    get('/')
         ->assertRedirect('/login');
 });
 
 test('the filament login displays the application brand', function () {
-    $this->get('/login')
+    get('/login')
         ->assertSee('Tasks');
 });
 
 test('the legacy admin prefix is not registered', function () {
-    $this->get('/admin')
+    get('/admin')
         ->assertNotFound();
 });

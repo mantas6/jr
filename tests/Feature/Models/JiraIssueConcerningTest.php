@@ -17,50 +17,56 @@ function concerningIds(User $user): array
         ->all();
 }
 
-beforeEach(function () {
-    $this->user = User::factory()->create(['jira_account_id' => 'acc-me']);
-});
-
 test('an important task is concerning', function () {
-    $issue = JiraIssue::factory()->for($this->user)->important()->create([
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->important()->create([
         'assignee_account_id' => null,
     ]);
 
-    expect(concerningIds($this->user))->toContain($issue->id);
+    expect(concerningIds($user))->toContain($issue->id);
 });
 
 test('an unstarred task that was pinned stays concerning until dismissed', function () {
-    $issue = JiraIssue::factory()->for($this->user)->concerning()->create([
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->concerning()->create([
         'assignee_account_id' => null,
         'mentions_me' => false,
     ]);
 
-    expect(concerningIds($this->user))->toContain($issue->id);
+    expect(concerningIds($user))->toContain($issue->id);
 
     $issue->update(['dismissed_at' => now(), 'is_important' => false, 'concerning_since' => null]);
 
-    expect(concerningIds($this->user))->not->toContain($issue->id);
+    expect(concerningIds($user))->not->toContain($issue->id);
 });
 
 test('a task assigned to me that was never dismissed is concerning', function () {
-    $issue = JiraIssue::factory()->for($this->user)->create([
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->create([
         'assignee_account_id' => 'acc-me',
         'dismissed_at' => null,
     ]);
 
-    expect(concerningIds($this->user))->toContain($issue->id);
+    expect(concerningIds($user))->toContain($issue->id);
 });
 
 test('a task that mentions me is concerning', function () {
-    $issue = JiraIssue::factory()->for($this->user)->mentionsMe()->create([
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->mentionsMe()->create([
         'assignee_account_id' => null,
     ]);
 
-    expect(concerningIds($this->user))->toContain($issue->id);
+    expect(concerningIds($user))->toContain($issue->id);
 });
 
 test('a dismissed task stays hidden when Jira reports other newer activity', function () {
-    $issue = JiraIssue::factory()->for($this->user)->mentionsMe()->create([
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->mentionsMe()->create([
         'assignee_account_id' => 'acc-me',
         'dismissed_at' => now()->subDay(),
         'jira_updated_at' => now(),
@@ -68,53 +74,65 @@ test('a dismissed task stays hidden when Jira reports other newer activity', fun
         'last_mentioned_at' => now()->subWeek(),
     ]);
 
-    expect(concerningIds($this->user))->not->toContain($issue->id);
+    expect(concerningIds($user))->not->toContain($issue->id);
 });
 
 test('a dismissed task reappears when I am newly assigned after the dismissal', function () {
-    $issue = JiraIssue::factory()->for($this->user)->dismissed(now()->subDay())->assignedToMeAt(now())->create([
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->dismissed(now()->subDay())->assignedToMeAt(now())->create([
         'assignee_account_id' => 'acc-me',
     ]);
 
-    expect(concerningIds($this->user))->toContain($issue->id);
+    expect(concerningIds($user))->toContain($issue->id);
 });
 
 test('a dismissed task reappears when I am newly mentioned in a comment after the dismissal', function () {
-    $issue = JiraIssue::factory()->for($this->user)->dismissed(now()->subDay())->mentionedAt(now())->create([
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->dismissed(now()->subDay())->mentionedAt(now())->create([
         'assignee_account_id' => null,
     ]);
 
-    expect(concerningIds($this->user))->toContain($issue->id);
+    expect(concerningIds($user))->toContain($issue->id);
 });
 
 test('a snoozed task is hidden even when important', function () {
-    $issue = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
 
-    expect(concerningIds($this->user))->not->toContain($issue->id);
+    $issue = JiraIssue::factory()->for($user)->important()->snoozed(now()->addHour())->create();
+
+    expect(concerningIds($user))->not->toContain($issue->id);
 });
 
 test('a task whose snooze has expired reappears', function () {
-    $issue = JiraIssue::factory()->for($this->user)->important()->create([
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->important()->create([
         'snoozed_until' => now()->subMinute(),
     ]);
 
-    expect(concerningIds($this->user))->toContain($issue->id);
+    expect(concerningIds($user))->toContain($issue->id);
 });
 
 test('another users concerning tasks are excluded', function () {
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
     $other = User::factory()->create(['jira_account_id' => 'acc-other']);
 
     JiraIssue::factory()->for($other)->important()->create();
 
-    expect(concerningIds($this->user))->toBeEmpty();
+    expect(concerningIds($user))->toBeEmpty();
 });
 
 test('a task assigned to someone else with no mention is not concerning', function () {
-    $issue = JiraIssue::factory()->for($this->user)->create([
+    $user = User::factory()->create(['jira_account_id' => 'acc-me']);
+
+    $issue = JiraIssue::factory()->for($user)->create([
         'assignee_account_id' => 'acc-someone',
         'is_important' => false,
         'mentions_me' => false,
     ]);
 
-    expect(concerningIds($this->user))->not->toContain($issue->id);
+    expect(concerningIds($user))->not->toContain($issue->id);
 });

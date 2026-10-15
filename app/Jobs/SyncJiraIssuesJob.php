@@ -292,7 +292,7 @@ class SyncJiraIssuesJob implements ShouldBeUnique, ShouldQueue
         /** @var array{approved: list<string>, unapproved: list<string>} $changes */
         $changes = ['approved' => [], 'unapproved' => []];
 
-        foreach ($client->getPullRequestsForIssues($approvals->keys()->map(strval(...))->all()) as $issueId => $pullRequests) {
+        foreach ($client->getPullRequestsForIssues(array_values($approvals->keys()->map(strval(...))->all())) as $issueId => $pullRequests) {
             if ($pullRequests === null) {
                 continue;
             }

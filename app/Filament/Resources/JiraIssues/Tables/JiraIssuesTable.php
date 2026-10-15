@@ -511,7 +511,7 @@ class JiraIssuesTable
             ->icon(Heroicon::Star)
             ->color('warning')
             ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
-            ->action(fn (Collection $records) => $records->each(fn (JiraIssue $record) => $record->update([
+            ->action(fn (Collection $records) => $records->ensure(JiraIssue::class)->each(fn (JiraIssue $record) => $record->update([
                 'is_important' => true,
                 'concerning_since' => $record->concerning_since ?? Carbon::now(),
             ])))
@@ -574,7 +574,7 @@ class JiraIssuesTable
             ->color('gray')
             ->visible(fn (HasTable $livewire): bool => $livewire instanceof ListConcerningTasks)
             ->action(fn (Collection $records) => response()->streamDownload(
-                fn () => print (ConcerningTasksExporter::toText($records)),
+                fn () => print (ConcerningTasksExporter::toText($records->ensure(JiraIssue::class))),
                 'concerning-tasks-'.now()->format('Y-m-d').'.txt',
                 ['Content-Type' => 'text/plain; charset=UTF-8'],
             ))

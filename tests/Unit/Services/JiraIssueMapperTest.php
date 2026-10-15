@@ -260,6 +260,8 @@ test('mapForUpsert json-encodes the sprints array', function () {
 /**
  * Build a Jira payload whose Development summary field (`customfield_10000`)
  * holds the given raw value.
+ *
+ * @return array<string, mixed>
  */
 function developmentPayload(mixed $value): array
 {
@@ -293,7 +295,7 @@ function developmentSummary(int $count, string $state): string
             ],
         ],
         'isStale' => false,
-    ]);
+    ], JSON_THROW_ON_ERROR);
 }
 
 test('map extracts the pull request state and count from the development field', function (string $state, int $count, JiraPullRequestState $expected) {

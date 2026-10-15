@@ -4,6 +4,9 @@ use App\Models\User;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
+use function Pest\Laravel\actingAs;
+use function Pest\Laravel\get;
+
 function attachmentUser(): User
 {
     return User::factory()->withJiraConnection()->create([
@@ -19,7 +22,7 @@ test('it proxies an attachment using the user jira credentials', function () {
         '*' => Http::response('binary-image-bytes', 200, ['Content-Type' => 'image/png']),
     ]);
 
-    $this->actingAs(attachmentUser())
+    actingAs(attachmentUser())
         ->get(route('jira.attachment', ['path' => '/rest/api/3/attachment/content/134715']))
         ->assertOk()
         ->assertHeader('Content-Type', 'image/png')
@@ -39,7 +42,7 @@ test('it forwards the upstream content disposition verbatim', function () {
         ]),
     ]);
 
-    $this->actingAs(attachmentUser())
+    actingAs(attachmentUser())
         ->get(route('jira.attachment', ['path' => '/rest/api/3/attachment/content/123']))
         ->assertOk()
         ->assertHeader('Content-Disposition', $disposition);
@@ -50,7 +53,7 @@ test('it derives an inline content disposition from the filename in the path', f
         '*' => Http::response('pdf-bytes', 200, ['Content-Type' => 'application/pdf']),
     ]);
 
-    $this->actingAs(attachmentUser())
+    actingAs(attachmentUser())
         ->get(route('jira.attachment', ['path' => '/secure/attachment/123/My%20Report.pdf']))
         ->assertOk()
         ->assertHeader('Content-Disposition', 'inline; filename="My Report.pdf"');
@@ -61,7 +64,7 @@ test('it omits the content disposition when the path carries no filename', funct
         '*' => Http::response('binary-image-bytes', 200, ['Content-Type' => 'image/png']),
     ]);
 
-    $this->actingAs(attachmentUser())
+    actingAs(attachmentUser())
         ->get(route('jira.attachment', ['path' => '/rest/api/3/attachment/content/123']))
         ->assertOk()
         ->assertHeaderMissing('Content-Disposition');
@@ -70,7 +73,7 @@ test('it omits the content disposition when the path carries no filename', funct
 test('it rejects paths outside the attachment allowlist', function () {
     Http::fake();
 
-    $this->actingAs(attachmentUser())
+    actingAs(attachmentUser())
         ->get(route('jira.attachment', ['path' => '/rest/api/3/issue/PROJ-1']))
         ->assertNotFound();
 
@@ -80,7 +83,7 @@ test('it rejects paths outside the attachment allowlist', function () {
 test('it returns 404 when the user has no jira connection', function () {
     Http::fake();
 
-    $this->actingAs(User::factory()->create())
+    actingAs(User::factory()->create())
         ->get(route('jira.attachment', ['path' => '/rest/api/3/attachment/content/1']))
         ->assertNotFound();
 
@@ -92,12 +95,12 @@ test('it returns 404 when jira responds with an error', function () {
         '*' => Http::response('nope', 403),
     ]);
 
-    $this->actingAs(attachmentUser())
+    actingAs(attachmentUser())
         ->get(route('jira.attachment', ['path' => '/rest/api/3/attachment/content/1']))
         ->assertNotFound();
 });
 
 test('it requires authentication', function () {
-    $this->get(route('jira.attachment', ['path' => '/rest/api/3/attachment/content/1']))
+    get(route('jira.attachment', ['path' => '/rest/api/3/attachment/content/1']))
         ->assertRedirect();
 });

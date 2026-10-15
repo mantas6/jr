@@ -8,6 +8,8 @@ use App\Services\Jira\JiraPullRequestState;
 use App\Services\Jira\JiraTransitionsCache;
 use Illuminate\Support\Facades\Http;
 
+use function Pest\Laravel\freezeTime;
+
 /**
  * Build a Jira `getIssue` payload for the given key with sensible defaults.
  *
@@ -199,7 +201,7 @@ test('refreshing an issue keeps its sprints and pull request summary when the fi
 });
 
 test('assigning an issue to me stamps it and clears its active snooze', function () {
-    $this->freezeTime();
+    freezeTime();
 
     $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
     $issue = JiraIssue::factory()->for($user)->snoozed()->create([

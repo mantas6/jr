@@ -13,6 +13,13 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Livewire\Features\SupportTesting\Testable;
+use PHPUnit\Framework\Assert;
+
+use function Pest\Laravel\actingAs;
+use function Pest\Laravel\assertDatabaseHas;
+use function Pest\Laravel\get;
+use function Pest\Laravel\travelTo;
 
 /**
  * Build a Jira `getIssue` payload for the given key with sensible defaults.
@@ -42,15 +49,33 @@ function resourceIssuePayload(string $key, array $fields = []): array
     ];
 }
 
+/**
+ * The HTML of the deferred Jira content infolist from the view page's last
+ * Livewire response. Livewire only exposes response effects through the
+ * untyped magic `Testable::__get()`.
+ *
+ * @param  Testable<ViewJiraIssue>  $component
+ */
+function jiraContentPartial(Testable $component): string
+{
+    $partial = $component->__get('effects')['partials']['schema.infolist.jiraContent'] ?? null;
+
+    if (!is_string($partial)) {
+        Assert::fail('The Jira content partial was not rendered.');
+    }
+
+    return $partial;
+}
+
 test('guests are redirected to login', function () {
-    $this->get(JiraIssueResource::getUrl())
+    get(JiraIssueResource::getUrl())
         ->assertRedirect('/login');
 });
 
 test('the list page renders for an authenticated user', function () {
     Http::fake();
 
-    $this->actingAs(User::factory()->create());
+    actingAs(User::factory()->create());
 
     livewire(ListJiraIssues::class)->assertOk();
 });
@@ -59,7 +84,7 @@ test('the table is scoped to the current user', function () {
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $mine = JiraIssue::factory()->for($user)->create();
     $theirs = JiraIssue::factory()->for(User::factory())->create();
@@ -73,7 +98,7 @@ test('the sync actions no longer live on the tasks table', function () {
     Http::fake();
 
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     livewire(ListJiraIssues::class)
         ->assertActionDoesNotExist(TestAction::make('sync')->table())
@@ -82,7 +107,7 @@ test('the sync actions no longer live on the tasks table', function () {
 
 test('opening the update modal reads status options from cache without hitting jira', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'issue_type' => 'Task',
@@ -108,7 +133,7 @@ test('opening the update modal reads status options from cache without hitting j
 
 test('changing the status via the update modal transitions the issue and refreshes the row', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-20',
@@ -137,7 +162,7 @@ test('changing the status via the update modal transitions the issue and refresh
 
 test('a status change trusts the transition target when jira re-fetch is still stale', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-22',
@@ -174,7 +199,7 @@ test('a status change trusts the transition target when jira re-fetch is still s
 
 test('a rejected status change notifies and leaves the row unchanged', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-21',
@@ -200,7 +225,7 @@ test('a rejected status change notifies and leaves the row unchanged', function 
 
 test('changing the assignee via the update modal assigns the issue in jira and refreshes the row', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-30',
@@ -236,7 +261,7 @@ test('changing the assignee via the update modal assigns the issue in jira and r
 
 test('selecting Unassigned via the update modal clears the assignee in jira and locally', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-31',
@@ -273,7 +298,7 @@ test('selecting Unassigned via the update modal clears the assignee in jira and 
 
 test('a rejected assignee change notifies and leaves the row unchanged', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-32',
@@ -299,7 +324,7 @@ test('a rejected assignee change notifies and leaves the row unchanged', functio
 
 test('the update modal dismiss toggle dismisses and unstars the task', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'issue_type' => 'Task',
@@ -324,7 +349,7 @@ test('the update modal dismiss toggle dismisses and unstars the task', function 
 test('the status line prompts to connect when jira is not connected', function () {
     Http::fake();
 
-    $this->actingAs(User::factory()->create());
+    actingAs(User::factory()->create());
 
     livewire(ListJiraIssues::class)
         ->assertSee('Jira not connected')
@@ -333,7 +358,7 @@ test('the status line prompts to connect when jira is not connected', function (
 
 test('bracketed text in the summary is rendered in bold', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'issue_type' => 'Task',
@@ -351,7 +376,7 @@ test('bracketed text in the summary is rendered in bold', function () {
 
 test('the sprint column renders each sprint name as a badge', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'issue_type' => 'Task',
@@ -372,7 +397,7 @@ test('the sprint column renders each sprint name as a badge', function () {
 
 test('the sprint filter narrows to the selected sprint without partial-name false matches', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $inSprintOne = JiraIssue::factory()->for($user)->create([
         'issue_type' => 'Task',
@@ -399,7 +424,7 @@ test('the full list includes open and Done tasks by default', function () {
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $open = JiraIssue::factory()->for($user)->create();
     $done = JiraIssue::factory()->for($user)->done()->create();
@@ -412,7 +437,7 @@ test('enabling the not-closed filter hides Done tasks on the full list', functio
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $open = JiraIssue::factory()->for($user)->create();
     $done = JiraIssue::factory()->for($user)->done()->create();
@@ -427,7 +452,7 @@ test('the PR column shows the pull request state icon, color and tooltip', funct
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->withPullRequest('MERGED', 2)->create();
 
@@ -442,7 +467,7 @@ test('the PR column shows draft requests in blue and unapproved open requests in
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->withPullRequest($state, 1)->create();
 
@@ -459,7 +484,7 @@ test('the PR column shows approved open or draft requests in green', function (s
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->withPullRequest($state, 1, approved: true)->create();
 
@@ -476,7 +501,7 @@ test('the PR column is empty for a task without pull requests', function () {
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create();
 
@@ -489,7 +514,7 @@ test('the PR column hides declined statuses and their tooltip', function () {
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
     $issue = JiraIssue::factory()->for($user)->withPullRequest('DECLINED', 2)->create();
 
     livewire(ListJiraIssues::class)
@@ -501,7 +526,7 @@ test('the current-sprint filter shows only active-sprint tasks on the full list'
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $inSprint = JiraIssue::factory()->for($user)->inActiveSprint()->create();
     $notInSprint = JiraIssue::factory()->for($user)->create();
@@ -514,7 +539,7 @@ test('the current-sprint filter shows only active-sprint tasks on the full list'
 
 test('the view page renders all task data for the owner', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'summary' => 'Detailed task summary',
@@ -538,7 +563,7 @@ test('the view page renders all task data for the owner', function () {
 
 test('the view page shows the formatted original estimate', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->withEstimate((8 * 3600) + (3 * 3600) + (30 * 60))->create([
         'issue_type' => 'Task',
@@ -553,7 +578,7 @@ test('the view page shows the formatted original estimate', function () {
 
 test('the view page paints without blocking on the deferred jira content', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'issue_type' => 'Task',
@@ -570,7 +595,7 @@ test('the view page paints without blocking on the deferred jira content', funct
 
 test('the view page renders the live description and comments from jira', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-70',
@@ -598,12 +623,12 @@ test('the view page renders the live description and comments from jira', functi
         ]),
     ]);
 
-    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
-        ->assertOk()
-        ->call('loadDeferredSchema', 'infolist.jiraContent');
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()]);
+    $component->assertOk();
+    $component->call('loadDeferredSchema', 'infolist.jiraContent');
 
     // The description and comments render in the deferred schema's partial.
-    $partial = $component->effects['partials']['schema.infolist.jiraContent'];
+    $partial = jiraContentPartial($component);
 
     expect($partial)
         ->toContain('<p>The rendered description.</p>')
@@ -616,7 +641,7 @@ test('the view page renders the live description and comments from jira', functi
 
 test('the view page renders live subtasks in a table with safe Jira links and escaped summaries', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-70',
@@ -644,7 +669,9 @@ test('the view page renders live subtasks in a table with safe Jira links and es
     $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    expect($component->effects['partials']['schema.infolist.jiraContent'])
+    $partial = jiraContentPartial($component);
+
+    expect($partial)
         ->toContain('Subtasks')
         ->toContain('<table')
         ->toContain('PROJ-71')
@@ -653,16 +680,16 @@ test('the view page renders live subtasks in a table with safe Jira links and es
         ->toContain('Another child')
         ->toContain('Testing')
         ->toContain('High')
-        ->toContain('href="https://example.atlassian.net/browse/PROJ-71"')
-        ->not->toContain('<script>alert(1)</script>')
-        ->not->toContain('javascript:alert(1)');
+        ->toContain('href="https://example.atlassian.net/browse/PROJ-71"');
+    expect($partial)->not->toContain('<script>alert(1)</script>');
+    expect($partial)->not->toContain('javascript:alert(1)');
 
     Http::assertSentCount(1);
 });
 
 test('the view page hides the subtasks section when Jira has none or the request fails', function (array $payload, int $status) {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-70',
@@ -675,7 +702,7 @@ test('the view page hides the subtasks section when Jira has none or the request
     $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    expect($component->effects['partials']['schema.infolist.jiraContent'])
+    expect(jiraContentPartial($component))
         ->not->toContain('Subtasks');
 })->with([
     'no subtasks' => [['fields' => ['subtasks' => []]], 200],
@@ -685,7 +712,7 @@ test('the view page hides the subtasks section when Jira has none or the request
 
 test('the view page shows Epic child issues even when the native subtasks field is empty', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-70',
         'issue_type' => 'Epic',
@@ -703,7 +730,7 @@ test('the view page shows Epic child issues even when the native subtasks field 
     $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    expect($component->effects['partials']['schema.infolist.jiraContent'])
+    expect(jiraContentPartial($component))
         ->toContain('Subtasks')
         ->toContain('Epic child task')
         ->toContain('PROJ-71');
@@ -714,7 +741,7 @@ test('the view page shows Epic child issues even when the native subtasks field 
 
 test('an Epic child lookup failure preserves the description and comments', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-70',
         'issue_type' => 'Epic',
@@ -729,14 +756,15 @@ test('an Epic child lookup failure preserves the description and comments', func
     $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    expect($component->effects['partials']['schema.infolist.jiraContent'])
-        ->toContain('Epic description')
-        ->not->toContain('Subtasks');
+    $partial = jiraContentPartial($component);
+
+    expect($partial)->toContain('Epic description');
+    expect($partial)->not->toContain('Subtasks');
 });
 
 test('the view page puts the PR summary in a collapsed section header with expandable details', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
     $issue = JiraIssue::factory()->for($user)->withPullRequest('MERGED', 1)->create([
         'jira_key' => 'PROJ-70',
         'jira_id' => '10001',
@@ -770,7 +798,7 @@ test('the view page puts the PR summary in a collapsed section header with expan
         ->assertDontSee('1 pull request, merged')
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    $partial = $component->effects['partials']['schema.infolist.jiraContent'];
+    $partial = jiraContentPartial($component);
 
     preg_match_all('/<section\b(.*?)<header\b[^>]*>(.*?)<\/header>/s', $partial, $sections, PREG_SET_ORDER);
     $prSections = array_values(array_filter($sections, fn (array $section): bool => str_contains($section[2], 'Pull requests')));
@@ -789,15 +817,15 @@ test('the view page puts the PR summary in a collapsed section header with expan
         ->toContain('example/app')
         ->toContain('feature-branch → main')
         ->toContain('Alice Author')
-        ->toContain('Bob Reviewer (approved)')
-        ->not->toContain('<script>alert(1)</script>');
+        ->toContain('Bob Reviewer (approved)');
+    expect($partial)->not->toContain('<script>alert(1)</script>');
 
     Http::assertSentCount(3);
 });
 
 test('a development API failure preserves task content and the synced pull request summary', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
     $issue = JiraIssue::factory()->for($user)->withPullRequest('OPEN', 2)->create([
         'jira_key' => 'PROJ-70',
         'issue_type' => 'Task',
@@ -812,7 +840,7 @@ test('a development API failure preserves task content and the synced pull reque
     $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    expect($component->effects['partials']['schema.infolist.jiraContent'])
+    expect(jiraContentPartial($component))
         ->toContain('2 pull requests, open')
         ->toContain('Still readable')
         ->toContain('Pull request details unavailable');
@@ -820,7 +848,7 @@ test('a development API failure preserves task content and the synced pull reque
 
 test('an open PR overrides a stale merged badge and updates the list status', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
     $issue = JiraIssue::factory()->for($user)->withPullRequest('MERGED', 1)->create([
         'jira_key' => 'SUPER-4419',
         'issue_type' => 'Task',
@@ -843,11 +871,12 @@ test('an open PR overrides a stale merged badge and updates the list status', fu
     $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    expect($component->effects['partials']['schema.infolist.jiraContent'])
-        ->toContain('2 pull requests, open, approved')
-        ->not->toContain('1 pull request, merged');
+    $partial = jiraContentPartial($component);
 
-    $this->assertDatabaseHas('jira_issues', ['id' => $issue->id, 'pr_state' => 'OPEN', 'pr_count' => 2, 'pr_approved' => true]);
+    expect($partial)->toContain('2 pull requests, open, approved');
+    expect($partial)->not->toContain('1 pull request, merged');
+
+    assertDatabaseHas('jira_issues', ['id' => $issue->id, 'pr_state' => 'OPEN', 'pr_count' => 2, 'pr_approved' => true]);
 
     livewire(ListJiraIssues::class)
         ->assertTableColumnExists('pr_state', fn (IconColumn $column): bool => $column->getColor($column->getState()) === 'success'
@@ -856,7 +885,7 @@ test('an open PR overrides a stale merged badge and updates the list status', fu
 
 test('declined statuses are omitted from the PR section summary', function (array $statuses, ?string $summary) {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
     $issue = JiraIssue::factory()->for($user)->withPullRequest('DECLINED', count($statuses))->create([
         'jira_key' => 'PROJ-70',
         'issue_type' => 'Task',
@@ -876,12 +905,12 @@ test('declined statuses are omitted from the PR section summary', function (arra
     $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    $partial = $component->effects['partials']['schema.infolist.jiraContent'];
+    $partial = jiraContentPartial($component);
     preg_match_all('/<header\b[^>]*>(.*?)<\/header>/s', $partial, $headers);
     $prHeader = collect($headers[1])->first(fn (string $header): bool => str_contains($header, 'Pull requests'));
 
-    expect($prHeader)->toBeString()->not->toContain('declined')
-        ->toContain($summary ?? 'Pull requests');
+    expect($prHeader)->toBeString()->toContain($summary ?? 'Pull requests');
+    expect($prHeader)->not->toContain('declined');
     expect(str_contains($prHeader, 'fi-badge'))->toBe($summary !== null);
 })->with([
     'only declined' => [['DECLINED'], null],
@@ -891,7 +920,7 @@ test('declined statuses are omitted from the PR section summary', function (arra
 
 test('the view page renders each copy-as-markdown button in its header with its own content', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-71',
@@ -943,11 +972,11 @@ test('the view page renders each copy-as-markdown button in its header with its 
         ]),
     ]);
 
-    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
-        ->assertOk()
-        ->call('loadDeferredSchema', 'infolist.jiraContent');
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()]);
+    $component->assertOk();
+    $component->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    $partial = $component->effects['partials']['schema.infolist.jiraContent'];
+    $partial = jiraContentPartial($component);
 
     expect($partial)
         ->toContain('Copy as Markdown')
@@ -964,7 +993,7 @@ test('the view page renders each copy-as-markdown button in its header with its 
 
 test('adding a comment from the view page posts the ADF body to jira and notifies', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-80',
@@ -1001,7 +1030,7 @@ test('adding a comment from the view page posts the ADF body to jira and notifie
 
 test('a rejected comment from the view page notifies and halts', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-81',
@@ -1023,7 +1052,7 @@ test('a rejected comment from the view page notifies and halts', function () {
 
 test('the add-comment action is shown with a jira connection and hidden without one', function () {
     $connected = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($connected);
+    actingAs($connected);
 
     $issue = JiraIssue::factory()->for($connected)->create([
         'jira_key' => 'PROJ-82',
@@ -1036,11 +1065,11 @@ test('the add-comment action is shown with a jira connection and hidden without 
     $connectedComponent = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    expect($connectedComponent->effects['partials']['schema.infolist.jiraContent'])
+    expect(jiraContentPartial($connectedComponent))
         ->toContain('Add comment');
 
     $disconnected = User::factory()->create();
-    $this->actingAs($disconnected);
+    actingAs($disconnected);
 
     $theirIssue = JiraIssue::factory()->for($disconnected)->create([
         'issue_type' => 'Task',
@@ -1052,13 +1081,13 @@ test('the add-comment action is shown with a jira connection and hidden without 
     $disconnectedComponent = livewire(ViewJiraIssue::class, ['record' => $theirIssue->getKey()])
         ->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    expect($disconnectedComponent->effects['partials']['schema.infolist.jiraContent'])
+    expect(jiraContentPartial($disconnectedComponent))
         ->not->toContain('Add comment');
 });
 
 test('the view page loads without a jira connection and shows content placeholders', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'issue_type' => 'Task',
@@ -1067,23 +1096,23 @@ test('the view page loads without a jira connection and shows content placeholde
 
     Http::fake();
 
-    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()])
-        ->assertOk()
-        ->call('loadDeferredSchema', 'infolist.jiraContent');
+    $component = livewire(ViewJiraIssue::class, ['record' => $issue->getKey()]);
+    $component->assertOk();
+    $component->call('loadDeferredSchema', 'infolist.jiraContent');
 
-    $partial = $component->effects['partials']['schema.infolist.jiraContent'];
+    $partial = jiraContentPartial($component);
 
     expect($partial)
         ->toContain('No description')
-        ->toContain('No comments')
-        ->not->toContain('Subtasks');
+        ->toContain('No comments');
+    expect($partial)->not->toContain('Subtasks');
 
     Http::assertNothingSent();
 });
 
 test('changing status from the view page transitions the issue in jira', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-50',
@@ -1116,7 +1145,7 @@ test('reassigning from the view page assigns the issue in jira', function () {
         'name' => 'Me McGee',
         'jira_last_synced_at' => now(),
     ]);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-51',
@@ -1146,7 +1175,7 @@ test('reassigning from the view page assigns the issue in jira', function () {
 
 test('the view page edit actions are hidden without a jira connection', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create();
 
@@ -1158,7 +1187,7 @@ test('the view page edit actions are hidden without a jira connection', function
 
 test('the view page can toggle the important flag without a jira connection', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create(['is_important' => false]);
 
@@ -1172,10 +1201,10 @@ test('the view page can toggle the important flag without a jira connection', fu
 });
 
 test('opening the view page marks the task as viewed', function () {
-    $this->travelTo(Carbon::parse('2026-03-10 12:00:00'));
+    travelTo(Carbon::parse('2026-03-10 12:00:00'));
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'last_viewed_at' => null,
@@ -1192,7 +1221,7 @@ test('opening the view page marks the task as viewed', function () {
 
 test('the view page can snooze the task', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create(['snoozed_until' => null]);
 
@@ -1207,7 +1236,7 @@ test('the view page can snooze the task', function () {
 
 test('the view page can un-snooze a snoozed task', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create(['snoozed_until' => now()->addHour()]);
 
@@ -1223,7 +1252,7 @@ test('the view page can un-snooze a snoozed task', function () {
 
 test('the view page un-snooze action is hidden when the task is not snoozed', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create(['snoozed_until' => null]);
 
@@ -1235,7 +1264,7 @@ test('the view page un-snooze action is hidden when the task is not snoozed', fu
 
 test('the view page un-snooze action is hidden when the snooze has expired', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->expiredSnooze()->create();
 
@@ -1248,7 +1277,7 @@ test('the view page un-snooze action is hidden when the snooze has expired', fun
 
 test('the view page snooze action is hidden while the task is snoozed', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create(['snoozed_until' => now()->addHour()]);
 
@@ -1261,7 +1290,7 @@ test('the view page snooze action is hidden while the task is snoozed', function
 
 test('the view page can dismiss the task, which also unstars it', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create(['dismissed_at' => null, 'is_important' => true]);
 
@@ -1277,7 +1306,7 @@ test('the view page can dismiss the task, which also unstars it', function () {
 
 test('sorting the jira updated column orders by the underlying date, not the humanized text', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_last_synced_at' => now()]);
-    $this->actingAs($user);
+    actingAs($user);
 
     Http::fake();
 
@@ -1308,7 +1337,7 @@ test('the assignee column is bold when the task is assigned to me', function () 
     Http::fake();
 
     $user = User::factory()->create(['jira_account_id' => 'acc-me']);
-    $this->actingAs($user);
+    actingAs($user);
 
     $mine = JiraIssue::factory()->for($user)->create([
         'assignee_account_id' => 'acc-me',
@@ -1325,7 +1354,7 @@ test('the assignee column is not bold when the task is assigned to someone else'
     Http::fake();
 
     $user = User::factory()->create(['jira_account_id' => 'acc-me']);
-    $this->actingAs($user);
+    actingAs($user);
 
     JiraIssue::factory()->for($user)->create([
         'assignee_account_id' => 'acc-other',
@@ -1353,7 +1382,7 @@ test('the priority column is visible by default', function () {
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     JiraIssue::factory()->for($user)->create();
 
@@ -1365,7 +1394,7 @@ test('sorting by priority orders by Jira importance, most important first', func
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $low = JiraIssue::factory()->for($user)->create(['priority' => 'Low']);
     $highest = JiraIssue::factory()->for($user)->create(['priority' => 'Highest']);
@@ -1382,7 +1411,7 @@ test('sorting by priority orders custom P-prefixed priority names by importance'
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $low = JiraIssue::factory()->for($user)->create(['priority' => 'P4 - Low']);
     $highest = JiraIssue::factory()->for($user)->create(['priority' => 'P1 - Highest']);
@@ -1399,7 +1428,7 @@ test('sorting by assignee orders alphabetically', function () {
     Http::fake();
 
     $user = User::factory()->create();
-    $this->actingAs($user);
+    actingAs($user);
 
     $charlie = JiraIssue::factory()->for($user)->create(['assignee_name' => 'Charlie']);
     $alice = JiraIssue::factory()->for($user)->create(['assignee_name' => 'Alice']);
@@ -1414,7 +1443,7 @@ test('the status line shows the last sync time when connected', function () {
     $user = User::factory()->withJiraConnection()->create([
         'jira_last_synced_at' => now()->subMinutes(3),
     ]);
-    $this->actingAs($user);
+    actingAs($user);
 
     Http::fake();
 

@@ -11,6 +11,7 @@ test('describe uses the plural noun for several pull requests', function () {
 });
 
 test('PR status prioritizes open requests and ignores declined requests', function (array $statuses, ?JiraPullRequestState $expected) {
+    /** @var list<string> $statuses */
     expect(JiraPullRequestState::fromStatuses($statuses))->toBe($expected);
 })->with([
     'open and merged' => [['MERGED', 'OPEN'], JiraPullRequestState::Open],
@@ -31,6 +32,7 @@ test('declined requests have no summary label or list icon', function () {
 });
 
 test('approval counts only for open or draft requests', function (array $pullRequests, bool $expected) {
+    /** @var list<array{status: string, approved: bool}> $pullRequests */
     expect(JiraPullRequestState::hasApproval($pullRequests))->toBe($expected);
 })->with([
     'approved open' => [[['status' => 'OPEN', 'approved' => true]], true],

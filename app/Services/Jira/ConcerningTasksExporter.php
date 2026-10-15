@@ -15,7 +15,7 @@ use Illuminate\Support\Collection;
 class ConcerningTasksExporter
 {
     /**
-     * @param  Collection<int, JiraIssue>  $issues
+     * @param  Collection<array-key, JiraIssue>  $issues
      */
     public static function toText(Collection $issues): string
     {

@@ -7,6 +7,8 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Http;
 
+use function Pest\Laravel\freezeTime;
+
 /**
  * Build a connected user with a known Jira account id.
  */
@@ -217,7 +219,7 @@ test('a description only mention flags the issue without a mention time', functi
 });
 
 test('the mention time never moves backward and an older mention keeps the snooze', function () {
-    $this->freezeTime();
+    freezeTime();
 
     $user = mentionsUser();
 
@@ -303,7 +305,8 @@ test('a scan is dropped behind an in-flight scan per user', function () {
     $user = mentionsUser();
 
     $middleware = collect((new SyncJiraMentionsJob($user))->middleware())
-        ->firstWhere(fn ($m): bool => $m instanceof WithoutOverlapping);
+        ->whereInstanceOf(WithoutOverlapping::class)
+        ->first();
 
     expect($middleware)->not->toBeNull()
         ->and($middleware->key)->toBe('mentions:'.$user->id)

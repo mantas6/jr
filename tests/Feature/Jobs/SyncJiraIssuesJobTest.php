@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
+use function Pest\Laravel\freezeTime;
+use function Pest\Laravel\travelTo;
+
 // The sync job dispatches the mentions job at the end; fake the queue so the
 // synchronous test connection does not run it inline (and exhaust HTTP fakes).
 beforeEach(fn () => Queue::fake());
@@ -294,7 +297,7 @@ function fakeAssignedIssueSync(): void
 }
 
 test('a newly assigned issue is stamped and its active snooze is cleared', function () {
-    $this->freezeTime();
+    freezeTime();
 
     $user = syncUser(['jira_account_id' => 'acc-1']);
 
@@ -473,7 +476,8 @@ test('a non-forced run is dropped behind an in-flight sync while a forced run wa
     $user = syncUser();
 
     $middleware = collect((new SyncJiraIssuesJob($user, $force))->middleware())
-        ->firstWhere(fn ($m): bool => $m instanceof WithoutOverlapping);
+        ->whereInstanceOf(WithoutOverlapping::class)
+        ->first();
 
     expect($middleware)->not->toBeNull()
         ->and($middleware->key)->toBe((string) $user->id)
@@ -488,7 +492,8 @@ test('a forced run keeps retrying until an abandoned overlap lock has expired', 
     $job = new SyncJiraIssuesJob(syncUser(), force: true);
 
     $overlapLockSeconds = collect($job->middleware())
-        ->firstWhere(fn ($m): bool => $m instanceof WithoutOverlapping)
+        ->whereInstanceOf(WithoutOverlapping::class)
+        ->first()
         ->expiresAfter;
 
     expect($job->retryUntil()->isAfter(now()->addSeconds($overlapLockSeconds)))->toBeTrue();
@@ -551,7 +556,7 @@ test('a first run with no prior full sync performs a full project sync', functio
 });
 
 test('a stale full sync older than 24h promotes to a full sync', function () {
-    $this->freezeTime();
+    freezeTime();
 
     $user = syncUser([
         'jira_last_synced_at' => now()->subMinutes(10),
@@ -569,7 +574,7 @@ test('a stale full sync older than 24h promotes to a full sync', function () {
 });
 
 test('a recent full sync runs incrementally with a relative updated window', function () {
-    $this->travelTo(now()->startOfSecond());
+    travelTo(now()->startOfSecond());
 
     $fullSyncedAt = now()->subHours(2);
 
@@ -593,7 +598,7 @@ test('a recent full sync runs incrementally with a relative updated window', fun
 });
 
 test('a forced run performs a full sync even when a recent full sync exists', function () {
-    $this->freezeTime();
+    freezeTime();
 
     $user = syncUser([
         'jira_last_synced_at' => now()->subMinutes(10),

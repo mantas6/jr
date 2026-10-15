@@ -2,7 +2,9 @@
 
 use App\Jobs\SyncJiraIssuesJob;
 use App\Models\User;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Console\Command\Command;
 
 test('it dispatches a sync only for connected users', function () {
     Queue::fake();
@@ -10,7 +12,7 @@ test('it dispatches a sync only for connected users', function () {
     $connected = User::factory()->withJiraConnection()->create();
     User::factory()->create();
 
-    $this->artisan('jira:sync')->assertSuccessful();
+    expect(Artisan::call('jira:sync'))->toBe(Command::SUCCESS);
 
     Queue::assertPushed(SyncJiraIssuesJob::class, 1);
     Queue::assertPushed(
@@ -24,7 +26,7 @@ test('it dispatches a sync for a single user by id', function () {
 
     $user = User::factory()->withJiraConnection()->create();
 
-    $this->artisan('jira:sync', ['user' => $user->id])->assertSuccessful();
+    expect(Artisan::call('jira:sync', ['user' => $user->id]))->toBe(Command::SUCCESS);
 
     Queue::assertPushed(
         SyncJiraIssuesJob::class,
@@ -37,7 +39,7 @@ test('the force option dispatches a forced full resync', function () {
 
     $user = User::factory()->withJiraConnection()->create();
 
-    $this->artisan('jira:sync', ['user' => $user->id, '--force' => true])->assertSuccessful();
+    expect(Artisan::call('jira:sync', ['user' => $user->id, '--force' => true]))->toBe(Command::SUCCESS);
 
     Queue::assertPushed(
         SyncJiraIssuesJob::class,
@@ -48,7 +50,7 @@ test('the force option dispatches a forced full resync', function () {
 test('it fails when the given user does not exist', function () {
     Queue::fake();
 
-    $this->artisan('jira:sync', ['user' => 999])->assertFailed();
+    expect(Artisan::call('jira:sync', ['user' => 999]))->toBe(Command::FAILURE);
 
     Queue::assertNothingPushed();
 });

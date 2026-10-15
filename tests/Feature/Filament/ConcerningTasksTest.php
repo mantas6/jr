@@ -9,20 +9,33 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
+
+use function Pest\Laravel\actingAs;
+use function Pest\Laravel\travelTo;
 
 beforeEach(function () {
     Http::fake();
 
     // A local Jira account id is enough to drive the concerning scope; without a
     // full connection the status/assignee columns stay local and hit no HTTP.
-    $this->user = User::factory()->create(['jira_account_id' => 'acc-me']);
-    $this->actingAs($this->user);
+    actingAs(User::factory()->create(['jira_account_id' => 'acc-me']));
 });
 
+/**
+ * The user the current test is signed in as.
+ */
+function signedInUser(): User
+{
+    return User::query()->findOrFail(Auth::id());
+}
+
 test('the concerning page only shows tasks that need attention', function () {
-    $important = JiraIssue::factory()->for($this->user)->important()->create();
-    $quiet = JiraIssue::factory()->for($this->user)->create([
+    $user = signedInUser();
+
+    $important = JiraIssue::factory()->for($user)->important()->create();
+    $quiet = JiraIssue::factory()->for($user)->create([
         'assignee_account_id' => 'acc-someone',
         'is_important' => false,
         'mentions_me' => false,
@@ -34,7 +47,7 @@ test('the concerning page only shows tasks that need attention', function () {
 });
 
 test('the concerning page shows the reason as a gray icon with a tooltip', function () {
-    $issue = JiraIssue::factory()->for($this->user)->important()->mentionedAt(now()->addMinute())->create();
+    $issue = JiraIssue::factory()->for(signedInUser())->important()->mentionedAt(now()->addMinute())->create();
 
     livewire(ListConcerningTasks::class)
         ->assertTableColumnVisible('reason')
@@ -47,9 +60,11 @@ test('the concerning page shows the reason as a gray icon with a tooltip', funct
 });
 
 test('the concerning page defaults to the active tab, which hides snoozed tasks', function () {
-    $active = JiraIssue::factory()->for($this->user)->important()->create();
-    $expiredSnooze = JiraIssue::factory()->for($this->user)->important()->expiredSnooze()->create();
-    $snoozed = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+    $user = signedInUser();
+
+    $active = JiraIssue::factory()->for($user)->important()->create();
+    $expiredSnooze = JiraIssue::factory()->for($user)->important()->expiredSnooze()->create();
+    $snoozed = JiraIssue::factory()->for($user)->important()->snoozed(now()->addHour())->create();
 
     livewire(ListConcerningTasks::class)
         ->assertSet('activeTab', 'active')
@@ -58,9 +73,11 @@ test('the concerning page defaults to the active tab, which hides snoozed tasks'
 });
 
 test('the snoozed tab shows only snoozed tasks', function () {
-    $active = JiraIssue::factory()->for($this->user)->important()->create();
-    $expiredSnooze = JiraIssue::factory()->for($this->user)->important()->expiredSnooze()->create();
-    $snoozed = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+    $user = signedInUser();
+
+    $active = JiraIssue::factory()->for($user)->important()->create();
+    $expiredSnooze = JiraIssue::factory()->for($user)->important()->expiredSnooze()->create();
+    $snoozed = JiraIssue::factory()->for($user)->important()->snoozed(now()->addHour())->create();
 
     livewire(ListConcerningTasks::class)
         ->set('activeTab', 'snoozed')
@@ -69,18 +86,20 @@ test('the snoozed tab shows only snoozed tasks', function () {
 });
 
 test('the unread tab shows active tasks not viewed since their last Jira update', function () {
-    $this->travelTo(Carbon::parse('2026-03-10 12:00:00'));
+    $user = signedInUser();
 
-    $neverViewed = JiraIssue::factory()->for($this->user)->important()->create([
+    travelTo(Carbon::parse('2026-03-10 12:00:00'));
+
+    $neverViewed = JiraIssue::factory()->for($user)->important()->create([
         'jira_updated_at' => now()->subDay(),
     ]);
-    $updatedSinceViewed = JiraIssue::factory()->for($this->user)->important()->viewed(now()->subDays(2))->create([
+    $updatedSinceViewed = JiraIssue::factory()->for($user)->important()->viewed(now()->subDays(2))->create([
         'jira_updated_at' => now()->subDay(),
     ]);
-    $viewedAfterUpdate = JiraIssue::factory()->for($this->user)->important()->viewed(now()->subHour())->create([
+    $viewedAfterUpdate = JiraIssue::factory()->for($user)->important()->viewed(now()->subHour())->create([
         'jira_updated_at' => now()->subDay(),
     ]);
-    $snoozedUnread = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create([
+    $snoozedUnread = JiraIssue::factory()->for($user)->important()->snoozed(now()->addHour())->create([
         'jira_updated_at' => now()->subDay(),
     ]);
 
@@ -93,10 +112,10 @@ test('the unread tab shows active tasks not viewed since their last Jira update'
 const UNREAD_MARKER = '<span style="color: light-dark(var(--danger-600), var(--danger-400)); font-weight: 700" title="Updated since you last opened it">*</span>';
 
 test('the Jira updated column marks unread tasks with a red asterisk', function (Closure $makeIssue, bool $expectMarker) {
-    $this->travelTo(Carbon::parse('2026-03-10 12:00:00'));
+    travelTo(Carbon::parse('2026-03-10 12:00:00'));
 
     /** @var JiraIssue $issue */
-    $issue = $makeIssue($this->user);
+    $issue = $makeIssue(signedInUser());
 
     $page = livewire(ListConcerningTasks::class)
         ->assertCanSeeTableRecords([$issue])
@@ -136,9 +155,9 @@ test('the Jira updated column marks unread tasks with a red asterisk', function 
 ]);
 
 test('the full task list also marks unread Jira update times with a red asterisk', function () {
-    $this->travelTo(Carbon::parse('2026-03-10 12:00:00'));
+    travelTo(Carbon::parse('2026-03-10 12:00:00'));
 
-    $unread = JiraIssue::factory()->for($this->user)->create([
+    $unread = JiraIssue::factory()->for(signedInUser())->create([
         'jira_updated_at' => now()->subDay(),
     ]);
 
@@ -148,12 +167,14 @@ test('the full task list also marks unread Jira update times with a red asterisk
 });
 
 test('each tab badge counts the current user\'s concerning tasks in that tab', function () {
-    JiraIssue::factory()->for($this->user)->important()->create();
-    JiraIssue::factory()->for($this->user)->important()->viewed()->create([
+    $user = signedInUser();
+
+    JiraIssue::factory()->for($user)->important()->create();
+    JiraIssue::factory()->for($user)->important()->viewed()->create([
         'jira_updated_at' => now()->subHour(),
     ]);
-    JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
-    JiraIssue::factory()->for($this->user)->create([
+    JiraIssue::factory()->for($user)->important()->snoozed(now()->addHour())->create();
+    JiraIssue::factory()->for($user)->create([
         'assignee_account_id' => 'acc-someone',
         'mentions_me' => false,
     ]);
@@ -168,7 +189,7 @@ test('each tab badge counts the current user\'s concerning tasks in that tab', f
 });
 
 test('the unread tab badge keeps the default color when nothing is unread', function () {
-    JiraIssue::factory()->for($this->user)->important()->viewed()->create([
+    JiraIssue::factory()->for(signedInUser())->important()->viewed()->create([
         'jira_updated_at' => now()->subHour(),
     ]);
 
@@ -179,8 +200,10 @@ test('the unread tab badge keeps the default color when nothing is unread', func
 });
 
 test('the not-closed filter is off by default on the concerning page but can hide Done tasks', function () {
-    $open = JiraIssue::factory()->for($this->user)->important()->create();
-    $done = JiraIssue::factory()->for($this->user)->important()->done()->create();
+    $user = signedInUser();
+
+    $open = JiraIssue::factory()->for($user)->important()->create();
+    $done = JiraIssue::factory()->for($user)->important()->done()->create();
 
     // The concerning list surfaces tasks that need attention regardless of status,
     // so Done tasks stay visible until the filter is applied by hand.
@@ -194,8 +217,10 @@ test('the not-closed filter is off by default on the concerning page but can hid
 });
 
 test('the current-sprint filter shows only active-sprint tasks on the concerning page', function () {
-    $inSprint = JiraIssue::factory()->for($this->user)->important()->inActiveSprint()->create();
-    $notInSprint = JiraIssue::factory()->for($this->user)->important()->create();
+    $user = signedInUser();
+
+    $inSprint = JiraIssue::factory()->for($user)->important()->inActiveSprint()->create();
+    $notInSprint = JiraIssue::factory()->for($user)->important()->create();
 
     livewire(ListConcerningTasks::class)
         ->filterTable('in_active_sprint', true)
@@ -224,7 +249,7 @@ test('the full task list exposes the trimmed filters plus not-closed and current
 });
 
 test('starring a task from the full list marks it important', function () {
-    $issue = JiraIssue::factory()->for($this->user)->create(['is_important' => false]);
+    $issue = JiraIssue::factory()->for(signedInUser())->create(['is_important' => false]);
 
     livewire(ListJiraIssues::class)
         ->callTableAction('toggleImportant', $issue);
@@ -238,7 +263,7 @@ test('starring a task from the full list marks it important', function () {
 });
 
 test('unstarring a task keeps it on the concerning list until dismissed', function () {
-    $issue = JiraIssue::factory()->for($this->user)->create([
+    $issue = JiraIssue::factory()->for(signedInUser())->create([
         'assignee_account_id' => 'acc-someone',
         'mentions_me' => false,
         'is_important' => true,
@@ -262,7 +287,7 @@ test('unstarring a task keeps it on the concerning list until dismissed', functi
 });
 
 test('snoozing a task sets the snooze window at midnight on the concerning list', function () {
-    $issue = JiraIssue::factory()->for($this->user)->important()->create();
+    $issue = JiraIssue::factory()->for(signedInUser())->important()->create();
 
     livewire(ListConcerningTasks::class)
         ->callTableAction('snooze', $issue, data: ['duration' => 'tomorrow']);
@@ -272,7 +297,7 @@ test('snoozing a task sets the snooze window at midnight on the concerning list'
 });
 
 test('each snooze duration maps to midnight of the expected day', function (string $duration, Closure $expected) {
-    $issue = JiraIssue::factory()->for($this->user)->important()->create();
+    $issue = JiraIssue::factory()->for(signedInUser())->important()->create();
 
     livewire(ListConcerningTasks::class)
         ->callTableAction('snooze', $issue, data: ['duration' => $duration]);
@@ -285,7 +310,7 @@ test('each snooze duration maps to midnight of the expected day', function (stri
 ]);
 
 test('dismissing a task stamps dismissed_at, unstars it, and clears its pin', function () {
-    $issue = JiraIssue::factory()->for($this->user)->create([
+    $issue = JiraIssue::factory()->for(signedInUser())->create([
         'assignee_account_id' => 'acc-me',
         'jira_updated_at' => now(),
         'dismissed_at' => null,
@@ -304,7 +329,7 @@ test('dismissing a task stamps dismissed_at, unstars it, and clears its pin', fu
 test('un-snoozing a task from the full list clears the snooze window', function () {
     // The full task list ignores snooze state, so the un-snooze action is
     // reachable there as well as on the concerning list's "Snoozed" tab.
-    $issue = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+    $issue = JiraIssue::factory()->for(signedInUser())->important()->snoozed(now()->addHour())->create();
 
     livewire(ListJiraIssues::class)
         ->assertTableActionVisible('unsnooze', $issue)
@@ -314,7 +339,7 @@ test('un-snoozing a task from the full list clears the snooze window', function 
 });
 
 test('the snooze and dismiss actions are hidden on the full task list', function () {
-    $issue = JiraIssue::factory()->for($this->user)->important()->create();
+    $issue = JiraIssue::factory()->for(signedInUser())->important()->create();
 
     livewire(ListJiraIssues::class)
         ->assertTableActionVisible('toggleImportant', $issue)
@@ -324,7 +349,7 @@ test('the snooze and dismiss actions are hidden on the full task list', function
 });
 
 test('the un-snooze action is hidden when the task is not snoozed', function () {
-    $issue = JiraIssue::factory()->for($this->user)->important()->create(['snoozed_until' => null]);
+    $issue = JiraIssue::factory()->for(signedInUser())->important()->create(['snoozed_until' => null]);
 
     livewire(ListConcerningTasks::class)
         ->assertTableActionVisible('snooze', $issue)
@@ -332,7 +357,7 @@ test('the un-snooze action is hidden when the task is not snoozed', function () 
 });
 
 test('an expired snooze hides the un-snooze action and shows the snooze action', function () {
-    $issue = JiraIssue::factory()->for($this->user)->important()->expiredSnooze()->create();
+    $issue = JiraIssue::factory()->for(signedInUser())->important()->expiredSnooze()->create();
 
     livewire(ListConcerningTasks::class)
         ->assertCanSeeTableRecords([$issue])
@@ -341,7 +366,7 @@ test('an expired snooze hides the un-snooze action and shows the snooze action',
 });
 
 test('an active snooze hides the snooze action and shows the un-snooze action', function () {
-    $issue = JiraIssue::factory()->for($this->user)->important()->snoozed(now()->addHour())->create();
+    $issue = JiraIssue::factory()->for(signedInUser())->important()->snoozed(now()->addHour())->create();
 
     livewire(ListConcerningTasks::class)
         ->set('activeTab', 'snoozed')
@@ -351,7 +376,7 @@ test('an active snooze hides the snooze action and shows the un-snooze action', 
 });
 
 test('bulk starring marks every selected task important', function () {
-    $issues = JiraIssue::factory()->for($this->user)->mentionsMe()->count(3)->create();
+    $issues = JiraIssue::factory()->for(signedInUser())->mentionsMe()->count(3)->create();
 
     livewire(ListConcerningTasks::class)
         ->callTableBulkAction('bulkStar', $issues);
@@ -360,7 +385,7 @@ test('bulk starring marks every selected task important', function () {
 });
 
 test('bulk snoozing sets the window on every selected task', function () {
-    $issues = JiraIssue::factory()->for($this->user)->important()->count(3)->create();
+    $issues = JiraIssue::factory()->for(signedInUser())->important()->count(3)->create();
 
     livewire(ListConcerningTasks::class)
         ->callTableBulkAction('bulkSnooze', $issues, data: ['duration' => 'next_week']);
@@ -372,7 +397,7 @@ test('bulk snoozing sets the window on every selected task', function () {
 });
 
 test('bulk dismissing stamps, unstars, and clears the pin on every selected task', function () {
-    $issue = JiraIssue::factory()->for($this->user)->create([
+    $issue = JiraIssue::factory()->for(signedInUser())->create([
         'assignee_account_id' => 'acc-me',
         'jira_updated_at' => now(),
         'dismissed_at' => null,
@@ -389,15 +414,17 @@ test('bulk dismissing stamps, unstars, and clears the pin on every selected task
 });
 
 test('bulk exporting downloads the selected tasks as a text file', function () {
-    $this->travelTo(Carbon::parse('2026-02-01 09:00:00'));
+    $user = signedInUser();
+
+    travelTo(Carbon::parse('2026-02-01 09:00:00'));
 
     // The table sorts by jira_updated_at desc, so the newer task exports first.
-    $a = JiraIssue::factory()->for($this->user)->important()->create([
+    $a = JiraIssue::factory()->for($user)->important()->create([
         'jira_url' => 'https://site.atlassian.net/browse/PROJ-1',
         'summary' => 'First task',
         'jira_updated_at' => now(),
     ]);
-    $b = JiraIssue::factory()->for($this->user)->important()->create([
+    $b = JiraIssue::factory()->for($user)->important()->create([
         'jira_url' => 'https://site.atlassian.net/browse/PROJ-2',
         'summary' => 'Second task',
         'jira_updated_at' => now()->subMinute(),
@@ -412,7 +439,7 @@ test('bulk exporting downloads the selected tasks as a text file', function () {
 });
 
 test('the bulk actions are hidden on the full task list', function () {
-    JiraIssue::factory()->for($this->user)->important()->create();
+    JiraIssue::factory()->for(signedInUser())->important()->create();
 
     livewire(ListJiraIssues::class)
         ->assertTableBulkActionHidden('bulkStar')
@@ -422,7 +449,7 @@ test('the bulk actions are hidden on the full task list', function () {
 });
 
 test('the resource registers two navigation items with concerning tasks on top', function () {
-    JiraIssue::factory()->for($this->user)->important()->count(2)->create();
+    JiraIssue::factory()->for(signedInUser())->important()->count(2)->create();
 
     $items = JiraIssueResource::getNavigationItems();
 
@@ -445,7 +472,7 @@ test('the concerning page shows the last sync time when connected', function () 
         'jira_account_id' => 'acc-me',
         'jira_last_synced_at' => now()->subMinutes(3),
     ]);
-    $this->actingAs($user);
+    actingAs($user);
 
     livewire(ListConcerningTasks::class)
         ->assertSee('Last synced');
@@ -485,7 +512,7 @@ test('the add-tasks action is disabled without a Jira connection', function () {
 
 test('adding a new key fetches it from Jira and pins it to the concerning list', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
-    $this->actingAs($user);
+    actingAs($user);
 
     // Reset the shared beforeEach catch-all fake so the specific stub takes effect.
     Http::swap(new Factory());
@@ -509,7 +536,7 @@ test('adding a new key fetches it from Jira and pins it to the concerning list',
 
 test('adding an existing key re-surfaces it without contacting Jira', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
-    $this->actingAs($user);
+    actingAs($user);
 
     $issue = JiraIssue::factory()->for($user)->create([
         'jira_key' => 'PROJ-1',
@@ -536,7 +563,7 @@ test('adding an existing key re-surfaces it without contacting Jira', function (
 
 test('a not-found key is reported as failed while valid keys are still added', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
-    $this->actingAs($user);
+    actingAs($user);
 
     // Reset the shared beforeEach catch-all fake so the specific stubs take effect.
     Http::swap(new Factory());
@@ -556,7 +583,7 @@ test('a not-found key is reported as failed while valid keys are still added', f
 
 test('submitting the add-tasks form without input shows a validation error', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
-    $this->actingAs($user);
+    actingAs($user);
 
     livewire(ListConcerningTasks::class)
         ->callAction('addTasks', data: ['tasks' => ''])
@@ -565,7 +592,7 @@ test('submitting the add-tasks form without input shows a validation error', fun
 
 test('garbage input adds nothing and warns that no keys were found', function () {
     $user = User::factory()->withJiraConnection()->create(['jira_account_id' => 'acc-me']);
-    $this->actingAs($user);
+    actingAs($user);
 
     Http::fake();
 

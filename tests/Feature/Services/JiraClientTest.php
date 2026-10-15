@@ -6,6 +6,7 @@ use App\Services\Jira\JiraClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Assert;
 
 function jiraUser(): User
 {
@@ -360,7 +361,7 @@ test('a 400 response includes Jira error messages', function () {
 
     try {
         JiraClient::forUser(jiraUser())->searchIssues('bad jql');
-        $this->fail('Expected JiraApiException was not thrown.');
+        Assert::fail('Expected JiraApiException was not thrown.');
     } catch (JiraApiException $exception) {
         expect($exception->getMessage())->toContain('JQL is invalid')
             ->and($exception->status)->toBe(400);
@@ -374,7 +375,7 @@ test('a connection exception is wrapped in a JiraApiException', function () {
 
     try {
         JiraClient::forUser(jiraUser())->me();
-        $this->fail('Expected JiraApiException was not thrown.');
+        Assert::fail('Expected JiraApiException was not thrown.');
     } catch (JiraApiException $exception) {
         expect($exception->getMessage())->toContain('Could not reach Jira at https://example.atlassian.net')
             ->and($exception->status)->toBe(0);
